@@ -1,0 +1,47 @@
+from pydantic import BaseModel, Field, model_validator
+
+
+class CardNewsGenerateRequest(BaseModel):
+    news_id: str = Field(alias="newsId")
+    stock_name: str = Field(alias="stockName")
+    news_content: str = Field(alias="newsContent")
+    exclude_terms: list[str] = Field(default_factory=list, alias="excludeTerms")
+
+    model_config = {"populate_by_name": True}
+
+
+class Term(BaseModel):
+    surface: str
+    term: str
+    definition: str
+
+
+class CardNewsItem(BaseModel):
+    headline: str
+    points: list[str]
+    keywords: list[str]
+    terms: list[Term]
+
+    @model_validator(mode="after")
+    def _check_keywords_len(self):
+        if len(self.keywords) != len(self.points):
+            raise ValueError("keywords와 points의 길이가 일치해야 합니다.")
+        if not self.keywords:
+            raise ValueError("keywords는 비어 있을 수 없습니다.")
+        return self
+
+
+class CardNewsResult(BaseModel):
+    news_id: str = Field(serialization_alias="newsId")
+    card_news: list[CardNewsItem] = Field(serialization_alias="cardNews")
+
+    model_config = {"populate_by_name": True}
+
+
+class CardNewsGenerateResponse(BaseModel):
+    is_success: bool = Field(serialization_alias="isSuccess", default=True)
+    code: str = "COMMON200"
+    message: str = "카드뉴스 생성에 성공했습니다."
+    result: CardNewsResult
+
+    model_config = {"populate_by_name": True}
