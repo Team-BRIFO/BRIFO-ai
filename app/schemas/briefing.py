@@ -32,7 +32,10 @@ class AgentBriefing(BaseModel):
     probability: float
     headline: str
     summary: str
-    personal_comment: str = Field(serialization_alias="personalComment")
+    personal_intro: str = Field(serialization_alias="personalIntro")
+    personal_outro: str | None = Field(
+        serialization_alias="personalOutro", default=None
+    )
     common_analysis: str = Field(serialization_alias="commonAnalysis")
     closing_comment: str = Field(serialization_alias="closingComment")
     model_name: str = Field(serialization_alias="modelName")
