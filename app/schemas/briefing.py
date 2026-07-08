@@ -26,6 +26,20 @@ class BriefingGenerateRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class CommonBriefing(BaseModel):
+    agent_type: AgentType = Field(serialization_alias="agentType")
+    direction: Direction
+    probability: float
+    headline: str
+    summary: str
+    common_analysis: str = Field(serialization_alias="commonAnalysis")
+    closing_comment: str = Field(serialization_alias="closingComment")
+    model_name: str = Field(serialization_alias="modelName")
+    cached: bool
+
+    model_config = {"populate_by_name": True}
+
+
 class AgentBriefing(BaseModel):
     agent_type: AgentType = Field(serialization_alias="agentType")
     direction: Direction

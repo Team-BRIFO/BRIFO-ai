@@ -4,8 +4,10 @@ LLM 모델 라우팅
 - 개인화: 최저가 저지연 모델
 """
 
+from app.schemas.briefing import AgentType
 
-def select_briefing_model(agent_type: str) -> tuple[str, str]:
+
+def select_briefing_model(agent_type: AgentType) -> tuple[str, str]:
     """
     브리핑용 모델 선택
     agent_type: "ROOKIE" | "TANKER" | "PRO"
