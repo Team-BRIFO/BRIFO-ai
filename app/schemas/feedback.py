@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from briefing import AgentType, RecentDecision
+from .briefing import AgentType, RecentDecision
 
 
 class PersonalCommentRequest(BaseModel):
