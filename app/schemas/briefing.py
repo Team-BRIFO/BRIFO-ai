@@ -48,21 +48,25 @@ class CommonBriefing(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class AgentBriefing(BaseModel):
-    agent_type: AgentType = Field(serialization_alias="agentType")
-    direction: Direction
-    probability: float
-    headline: str
-    summary: str
-    personal_intro: str | None = Field(serialization_alias="personalIntro")
-    personal_outro: str | None = Field(serialization_alias="personalOutro")
-    common_analysis: str = Field(serialization_alias="commonAnalysis")
-    closing_comment: str = Field(serialization_alias="closingComment")
-    model_name: str = Field(serialization_alias="modelName")
-    cached: bool
+class AgentBriefing(CommonBriefing):
+    personal_intro: str | None = Field(
+        default=None, serialization_alias="personalIntro"
+    )
+    personal_outro: str | None = Field(
+        default=None, serialization_alias="personalOutro"
+    )
     personal_cached: bool = Field(serialization_alias="personalCached")
 
-    model_config = {"populate_by_name": True}
+
+class BriefingConclusion(BaseModel):
+    headline: str
+    direction: Direction
+    probability: float
+
+
+class PersonalComment(BaseModel):
+    personal_intro: str
+    personal_outro: str | None = None
 
 
 class BriefingResult(BaseModel):

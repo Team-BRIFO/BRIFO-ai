@@ -3,6 +3,7 @@ LLM 사용량·비용 기록
 MVP는 JSON 로그부터 시작, 추후 DB 테이블로 확장 가능.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Literal
 LOG_PATH = Path("logs/llm_usage.jsonl")
 
 
-def record_usage(
+async def record_usage(
     *,  # 키워드 전용
     model_name: str,
     agent_type: str,
@@ -46,6 +47,10 @@ def record_usage(
         "error_type": error_type,
     }
 
+    await asyncio.to_thread(_write_log, usage_log)
+
+
+def _write_log(usage_log: dict) -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with LOG_PATH.open("a", encoding="utf-8") as f:

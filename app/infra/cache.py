@@ -3,20 +3,22 @@ Redis 캐싱
 공통 분석 + 개인화 레이어 코멘트 - TTL 24h
 """
 
+from app.schemas.briefing import CommonBriefing, PersonalComment
+
 
 # 공통 분석: briefing:{news_id}:{agent_type}:{level_range} — 전역 공유
 async def get_briefing(
     news_id: str, agent_type: str, level_range: str
-) -> dict | None: ...
+) -> CommonBriefing | None: ...
 
 
 async def set_briefing(
-    news_id: str, agent_type: str, level_range: str, value: dict
+    news_id: str, agent_type: str, level_range: str, value: CommonBriefing
 ) -> None: ...
 
 
 # 개인화 레이어: briefing:personal:{user_id}:{briefing_id} — 유저별
-async def get_personal(user_id: str, briefing_id: str) -> dict | None: ...
+async def get_personal(user_id: str, briefing_id: str) -> PersonalComment | None: ...
 
 
-async def set_personal(user_id: str, briefing_id: str, value: dict) -> None: ...
+async def set_personal(user_id: str, briefing_id: str, value: PersonalComment) -> None: ...
