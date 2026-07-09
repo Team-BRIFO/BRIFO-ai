@@ -10,8 +10,8 @@ class RecentDecision(BaseModel):
     stock_name: str = Field(alias="stockName")
     direction: Direction
     confidence: int
-    is_correct: bool | None = Field(alias="isCorrect")
-    actual_change: float | None = Field(alias="actualChange")
+    is_correct: bool = Field(alias="isCorrect")
+    actual_change: float = Field(alias="actualChange")
 
     model_config = {"populate_by_name": True}
 
