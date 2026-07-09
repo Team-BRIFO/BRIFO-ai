@@ -6,18 +6,26 @@ AgentType = Literal["ROOKIE", "TANKER", "PRO"]
 Direction = Literal["UP", "DOWN", "NEUTRAL"]
 
 
+class NewsInput(BaseModel):
+    news_id: str = Field(alias="newsId")
+    headline: str
+    point: list[str]
+
+    model_config = {"populate_by_name": True}
+
+
 class RecentDecision(BaseModel):
     stock_name: str = Field(alias="stockName")
     direction: Direction
     confidence: int
-    is_correct: bool | None = Field(alias="isCorrect")
-    actual_change: float | None = Field(alias="actualChange")
+    is_correct: bool = Field(alias="isCorrect")
+    actual_change: float = Field(alias="actualChange")
 
     model_config = {"populate_by_name": True}
 
 
 class BriefingGenerateRequest(BaseModel):
-    news_id: str = Field(alias="newsId")
+    news: NewsInput
     user_id: str = Field(alias="userId")
     agent_types: list[AgentType] = Field(alias="agentTypes")
     level_range: str = Field(alias="levelRange")
@@ -46,10 +54,8 @@ class AgentBriefing(BaseModel):
     probability: float
     headline: str
     summary: str
-    personal_intro: str = Field(serialization_alias="personalIntro")
-    personal_outro: str | None = Field(
-        serialization_alias="personalOutro", default=None
-    )
+    personal_intro: str | None = Field(serialization_alias="personalIntro")
+    personal_outro: str | None = Field(serialization_alias="personalOutro")
     common_analysis: str = Field(serialization_alias="commonAnalysis")
     closing_comment: str = Field(serialization_alias="closingComment")
     model_name: str = Field(serialization_alias="modelName")
