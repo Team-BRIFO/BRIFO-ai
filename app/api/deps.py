@@ -4,6 +4,8 @@
 - 설정(Settings) 주입
 """
 
+import secrets
+
 from fastapi import Depends, Header
 
 from app.config.settings import Settings, get_settings
@@ -17,5 +19,7 @@ async def verify_internal_api_key(
     """
     AI_INTERNAL_API_KEY 헤더가 설정된 내부 API 키와 일치하는지 검증한다.
     """
-    if ai_internal_api_key != settings.internal_api_key:
+    if not ai_internal_api_key or not secrets.compare_digest(
+        ai_internal_api_key, settings.internal_api_key
+    ):
         raise Unauthorized()
