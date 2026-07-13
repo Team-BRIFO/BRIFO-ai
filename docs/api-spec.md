@@ -25,7 +25,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
 
 | code | HTTP Status | 상황 | message |
 | --- | --- | --- | --- |
-| AUTH401 | 401 | Access Token 없음 또는 만료 | 유효하지 않은 토큰입니다. |
+| AUTH401 | 401 | 내부 API 키 누락 또는 불일치 | 유효하지 않은 내부 API 키입니다. |
 | USER404 | 404 | 사용자를 찾을 수 없음 | 사용자를 찾을 수 없습니다. |
 | NEWS404 | 404 | 카드뉴스를 찾을 수 없음 | 카드뉴스를 찾을 수 없습니다. |
 | AGENT400 | 400 | 유효하지 않은 사원 유형 | 유효하지 않은 사원 유형입니다. |
@@ -36,7 +36,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ## 1. 카드뉴스 요약 생성
  
-뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 리스트를 생성합니다. `news_id` 기준 24h 캐시.
+뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 리스트를 생성합니다. `news_id` 기준 24h 캐시 구현 예정.
  
 **`POST /ai/news/summarize`**
  
@@ -81,12 +81,12 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
 }
 ```
  
-- `keywords.length`는 `points.length`와 같아야 하며, `keywords`는 빈 배열 불가 (`CardNewsItem` validator에서 검증, 위반 시 `ValidationError` → 서비스 레이어에서 `InvalidRequest` 등으로 매핑 필요)
+- `keywords.length`는 `points.length`와 같아야 하며, `keywords`는 빈 배열 불가 (`CardNewsItem` validator에서 검증, 위반 시 `ValidationError` → `COMMON400`(400)으로 매핑)
 ---
  
 ## 2. 사원 브리핑 생성
  
-카드뉴스 1건에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다. 공통 분석은 `(newsId, agentType, levelRange)` 기준, 개인화 코멘트는 `(userId, briefingId)` 기준으로 각각 24h 캐시.
+카드뉴스 1건에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다. 공통 분석은 `(newsId, agentType, levelRange)` 기준, 개인화 코멘트는 `(userId, briefingId)` 기준으로 각각 24h 캐시 구현 예정.
  
 **`POST /ai/briefing/generate`**
  

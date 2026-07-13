@@ -15,7 +15,7 @@ class BrifoAIException(Exception):
 
 class Unauthorized(BrifoAIException):
     code = "AUTH401"
-    message = "유효하지 않은 토큰입니다."
+    message = "유효하지 않은 내부 API 키입니다."
     status_code = 401
 
 
