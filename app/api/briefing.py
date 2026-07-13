@@ -3,13 +3,15 @@ POST /ai/briefing/generate — ROOKIE, TANKER, PRO 브리핑 생성 요청 처�
 요청/응답 검증만 담당하며, 비즈니스 로직은 core/services에 위임한다.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.deps import verify_internal_api_key
 from app.core.services.briefing_service import generate_briefings
 from app.schemas.briefing import BriefingGenerateRequest, BriefingGenerateResponse
 
-# TODO: AI_INTERNAL_API_KEY 인증 의존성(api/deps.py) 준비되면 router에 연결
-router = APIRouter(prefix="/ai/briefing", tags=["briefing"])
+router = APIRouter(
+    prefix="/ai/briefing", tags=["briefing"], dependencies=[Depends(verify_internal_api_key)]
+)
 
 
 @router.post("/generate", response_model=BriefingGenerateResponse)
