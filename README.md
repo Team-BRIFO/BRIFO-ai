@@ -6,7 +6,7 @@
 
 BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 AI 사원 3명(루키·프로·탱커)을 고용하고, 이들의 분석 보고서를 바탕으로 투자 의사결정을 내리는 **게이미피케이션 기반 AI 투자 교육 플랫폼**입니다.
 
-이 저장소는 BRIFO의 **AI 서비스(FastAPI)** 입니다. 카드뉴스 요약, AI 사원 3종의 페르소나 브리핑 생성, 개인화 피드백 등 **LLM 프롬프팅·호출·캐싱**을 담당하는 별도 파이썬 서버로, 백엔드 API 서버([BRIFO-server](https://github.com/Team-BRIFO/BRIFO-server), Spring Boot)의 요청을 받아 결과 JSON을 반환합니다.
+이 저장소는 BRIFO의 **AI 서비스(FastAPI)** 입니다. 카드뉴스 요약, AI 사원 3종의 페르소나 브리핑 생성 등 **LLM 프롬프팅·호출·캐싱**을 담당하는 별도 파이썬 서버로, 백엔드 API 서버([BRIFO-server](https://github.com/Team-BRIFO/BRIFO-server), Spring Boot)의 요청을 받아 결과 JSON을 반환합니다.
 
 ## 📖 프로젝트 소개
 
@@ -84,7 +84,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 ```
 app/
 ├── main.py             # FastAPI 진입점 (lifespan: HTTP/Redis 클라이언트, 라우터·예외 핸들러 등록)
-├── api/                # HTTP 입구 (health · briefing · news · feedback · deps) — 로직 없음
+├── api/                # HTTP 입구 (health · briefing · news · deps) — 로직 없음
 ├── schemas/            # 백엔드와 주고받는 Pydantic Request/Response 모델
 ├── core/
 │   ├── agents/         # agent_profiles · model_policy · prompt_builder · llm_router
