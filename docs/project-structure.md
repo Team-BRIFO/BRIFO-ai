@@ -15,8 +15,8 @@ app/
 │   ├── deps.py
 │   ├── health.py
 │   ├── briefing.py
-│   ├── news.py
-│   └── feedback.py
+│   └── news.py
+
 ├── schemas/
 │   ├── briefing.py
 │   └── news.py
