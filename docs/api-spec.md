@@ -1,8 +1,7 @@
 # BRIFO AI Service API 명세서
  
 FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다. Spring Boot 백엔드가 `AI_INTERNAL_API_KEY` 헤더 인증을 통해서만 호출합니다.
- 
-- Base URL: (Cloud Run 배포 URL, 추후 확정)
+
 - 인증: 모든 요청에 `AI_INTERNAL_API_KEY` 헤더 필수
 - Content-Type: `application/json`
 - 요청 바디: camelCase / 응답 바디: camelCase (Pydantic `alias`, `serialization_alias`로 매핑)
@@ -174,7 +173,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ## 3. Health check
  
-**`GET /internal/health`**
+**`GET /ai/health`**
  
 ### Response `200`
  
