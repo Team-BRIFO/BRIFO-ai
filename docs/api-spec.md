@@ -39,7 +39,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 리스트를 생성합니다. `news_id` 기준 24h 캐시.
  
-**`POST /ai/card-news`**
+**`POST /ai/news/summarize`**
  
 ### Request
  
