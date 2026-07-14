@@ -15,12 +15,11 @@ app/
 │   ├── deps.py
 │   ├── health.py
 │   ├── briefing.py
-│   ├── news.py
-│   └── feedback.py
+│   └── news.py
+
 ├── schemas/
 │   ├── briefing.py
-│   ├── news.py
-│   └── feedback.py
+│   └── news.py
 ├── core/
 │   ├── agents/
 │   │   ├── agent_profiles.py
@@ -29,8 +28,8 @@ app/
 │   │   └── llm_router.py
 │   └── services/
 │       ├── briefing_service.py
-│       ├── summary_service.py
-│       └── feedback_service.py
+│       └── summary_service.py
+
 ├── infra/
 │   ├── http_client.py
 │   ├── openrouter_client.py
@@ -66,7 +65,6 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 | `health.py` | `GET /ai/health` | 서버 상태 확인 |
 | `briefing.py` | `POST /ai/briefing/generate` | ROOKIE, TANKER, PRO 브리핑 생성 요청 처리 |
 | `news.py` | `POST /ai/news/summarize` | 카드뉴스 요약 요청 처리 |
-| `feedback.py` | `POST /ai/personal-feedback/generate` | 사용자 최근 결정 기반 개인화 피드백 요청 처리 |
 
 ---
 
@@ -78,7 +76,6 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 |------|------|
 | `briefing.py` | 브리핑 요청/응답 스키마 |
 | `news.py` | 카드뉴스 요약 요청/응답 스키마 |
-| `feedback.py` | 피드백 요청/응답 스키마 |
 
 ---
 
@@ -99,7 +96,6 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 |------|------|
 | `briefing_service.py` | Redis 캐시 확인 후 ROOKIE·TANKER·PRO를 `asyncio.gather`로 동시 호출하여 브리핑 취합 |
 | `summary_service.py` | 카드뉴스 요약 로직 |
-| `feedback_service.py` | 최근 결정 3건과 현재 브리핑 결과를 반영한 개인화 피드백 생성 |
 
 ---
 

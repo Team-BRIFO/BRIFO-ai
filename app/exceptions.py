@@ -13,6 +13,18 @@ class BrifoAIException(Exception):
         super().__init__(self.message)
 
 
+class Unauthorized(BrifoAIException):
+    code = "AUTH401"
+    message = "유효하지 않은 내부 API 키입니다."
+    status_code = 401
+
+
+class UserNotFound(BrifoAIException):
+    code = "USER404"
+    message = "사용자를 찾을 수 없습니다."
+    status_code = 404
+
+
 class InvalidRequest(BrifoAIException):
     code = "COMMON400"
     message = "잘못된 요청입니다."

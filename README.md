@@ -6,7 +6,7 @@
 
 BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 AI 사원 3명(루키·프로·탱커)을 고용하고, 이들의 분석 보고서를 바탕으로 투자 의사결정을 내리는 **게이미피케이션 기반 AI 투자 교육 플랫폼**입니다.
 
-이 저장소는 BRIFO의 **AI 서비스(FastAPI)** 입니다. 카드뉴스 요약, AI 사원 3종의 페르소나 브리핑 생성, 개인화 피드백 등 **LLM 프롬프팅·호출·캐싱**을 담당하는 별도 파이썬 서버로, 백엔드 API 서버([BRIFO-server](https://github.com/Team-BRIFO/BRIFO-server), Spring Boot)의 요청을 받아 결과 JSON을 반환합니다.
+이 저장소는 BRIFO의 **AI 서비스(FastAPI)** 입니다. 카드뉴스 요약, AI 사원 3종의 페르소나 브리핑 생성 등 **LLM 프롬프팅·호출·캐싱**을 담당하는 별도 파이썬 서버로, 백엔드 API 서버([BRIFO-server](https://github.com/Team-BRIFO/BRIFO-server), Spring Boot)의 요청을 받아 결과 JSON을 반환합니다.
 
 ## 📖 프로젝트 소개
 
@@ -57,7 +57,6 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 | ---- | ---------- | ---- |
 | 카드뉴스 요약 | `POST /ai/news/summarize` | 뉴스 원문을 5W1H 객관 사실 카드로 요약(+주식 용어 추출). 원문은 메모리에서만 처리 |
 | AI 사원 브리핑 | `POST /ai/briefing/generate` | 루키·프로·탱커 3종을 병렬 호출해 사원별 분석 보고서 생성 |
-| 개인화 피드백 | `POST /ai/personal-feedback/generate` | 사용자 최근 결정 3건을 반영한 개인화 코멘트 생성 |
 | 헬스 체크 | `GET /ai/health` | 서버 상태 확인 |
 
 - LLM은 **사원별 차등**으로 사용합니다: 루키 `Claude Haiku 4.5` · 탱커 `Claude Sonnet 4.6` · 프로 `Claude Opus 4.x`, 카드뉴스 요약·개인화는 `Gemini 3 Flash`. 라우팅은 **OpenRouter** 를 통합니다(primary/fallback 정책).
@@ -85,11 +84,11 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 ```
 app/
 ├── main.py             # FastAPI 진입점 (lifespan: HTTP/Redis 클라이언트, 라우터·예외 핸들러 등록)
-├── api/                # HTTP 입구 (health · briefing · news · feedback · deps) — 로직 없음
+├── api/                # HTTP 입구 (health · briefing · news · deps) — 로직 없음
 ├── schemas/            # 백엔드와 주고받는 Pydantic Request/Response 모델
 ├── core/
 │   ├── agents/         # agent_profiles · model_policy · prompt_builder · llm_router
-│   └── services/       # briefing_service · summary_service · feedback_service (use-case 흐름)
+│   └── services/       # briefing_service · summary_service (use-case 흐름)
 ├── infra/              # 외부 I/O — http_client · openrouter_client · cache · usage_tracker
 ├── config/settings.py  # pydantic-settings 기반 환경 변수
 └── exceptions.py       # 공통 커스텀 예외
