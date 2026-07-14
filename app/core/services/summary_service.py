@@ -36,9 +36,7 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
         raise AllModelsFailed() from exc
     latency_ms = (time.perf_counter() - started) * 1000
 
-    card_news = _parse_card_news(llm_response)
-
-    await record_usage(
+    usage_kwargs = dict(
         model_name=llm_response.get("model", primary_model),
         agent_type="SUMMARY",
         task_type="news_summary",
@@ -47,6 +45,14 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
         latency_ms=latency_ms,
         fallback_used=llm_response.get("fallback_used", False),
     )
+
+    try:
+        card_news = _parse_card_news(llm_response)
+    except InvalidRequest:
+        await record_usage(**usage_kwargs, status="error", error_type="parse_error")
+        raise
+
+    await record_usage(**usage_kwargs)
 
     return CardNewsResult(news_id=request.news_id, card_news=card_news)
 
