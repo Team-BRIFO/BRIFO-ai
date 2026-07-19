@@ -7,9 +7,9 @@ Direction = Literal["UP", "DOWN", "NEUTRAL"]
 
 
 class NewsInput(BaseModel):
-    news_id: str = Field(alias="newsId")
+    card_id: str = Field(alias="cardId")
     headline: str
-    point: list[str]
+    points: list[str]
 
     model_config = {"populate_by_name": True}
 
@@ -25,7 +25,7 @@ class RecentDecision(BaseModel):
 
 
 class BriefingGenerateRequest(BaseModel):
-    news: NewsInput
+    news_card: list[NewsInput] = Field(alias="newsCard")
     user_id: str = Field(alias="userId")
     agent_types: list[AgentType] = Field(alias="agentTypes")
     level_range: str = Field(alias="levelRange")
@@ -37,11 +37,11 @@ class BriefingGenerateRequest(BaseModel):
 class CommonBriefing(BaseModel):
     agent_type: AgentType = Field(serialization_alias="agentType")
     direction: Direction
-    probability: float
+    confidence_rate: int = Field(serialization_alias="confidenceRate")
     headline: str
     summary: str
-    common_analysis: str = Field(serialization_alias="commonAnalysis")
-    closing_comment: str = Field(serialization_alias="closingComment")
+    content_text: str = Field(serialization_alias="contentText")
+    one_liner: str = Field(serialization_alias="oneLiner")
     model_name: str = Field(serialization_alias="modelName")
     cached: bool
 
@@ -49,11 +49,8 @@ class CommonBriefing(BaseModel):
 
 
 class AgentBriefing(CommonBriefing):
-    personal_intro: str | None = Field(
-        default=None, serialization_alias="personalIntro"
-    )
-    personal_outro: str | None = Field(
-        default=None, serialization_alias="personalOutro"
+    personal_comment: str | None = Field(
+        serialization_alias="personalComment", default=None
     )
     personal_cached: bool = Field(serialization_alias="personalCached")
 
@@ -61,7 +58,7 @@ class AgentBriefing(CommonBriefing):
 class BriefingConclusion(BaseModel):
     headline: str
     direction: Direction
-    probability: float
+    confidence_rate: int = Field(alias="confidenceRate")
 
 
 class PersonalComment(BaseModel):
@@ -70,7 +67,7 @@ class PersonalComment(BaseModel):
 
 
 class BriefingResult(BaseModel):
-    news_id: str = Field(serialization_alias="newsId")
+    card_id: str = Field(serialization_alias="cardId")
     briefings: list[AgentBriefing]
 
     model_config = {"populate_by_name": True}
