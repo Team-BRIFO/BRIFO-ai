@@ -35,17 +35,22 @@ async def call_llm(
 
     primary·fallback 둘 다 실패하면 마지막 실패 원인에 맞는 예외를 던진다
     (타임아웃 → LLMTimeout, 한도초과 → RateLimit, 그 외 → AllModelsFailed).
+
+    task_type이 "personal"이면 response_format(JSON 강제)을 요청하지 않는다.
     """
+    require_json = task_type != "personal"
     client = get_openrouter_client()
     started = time.perf_counter()
 
     try:
-        result = await _try_model(client, primary_model, prompt)
+        result = await _try_model(client, primary_model, prompt, require_json=require_json)
         fallback_used = False
         used_model = primary_model
     except Exception:
         try:
-            result = await _try_model(client, fallback_model, prompt)
+            result = await _try_model(
+                client, fallback_model, prompt, require_json=require_json
+            )
             fallback_used = True
             used_model = fallback_model
         except Exception as fallback_exc:
@@ -89,18 +94,21 @@ async def call_llm(
     }
 
 
-async def _try_model(client: httpx.AsyncClient, model: str, prompt: str) -> dict:
+async def _try_model(
+    client: httpx.AsyncClient, model: str, prompt: str, *, require_json: bool
+) -> dict:
     """
     모델 1개에 대해 1회 호출을 시도한다.
+    require_json이 True일 때만 response_format(JSON 강제)을 요청한다.
     """
-    response = await client.post(
-        _COMPLETIONS_PATH,
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"},
-        },
-    )
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if require_json:
+        payload["response_format"] = {"type": "json_object"}
+
+    response = await client.post(_COMPLETIONS_PATH, json=payload)
     response.raise_for_status()
     result = response.json()
 
