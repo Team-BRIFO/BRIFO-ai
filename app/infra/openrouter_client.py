@@ -65,9 +65,9 @@ async def call_llm(
             _raise_for_error_type(error_type, primary_model, fallback_model, fallback_exc)
 
     latency_ms = (time.perf_counter() - started) * 1000
-    usage = result.get("usage", {})
-    input_tokens = usage.get("prompt_tokens", 0)
-    output_tokens = usage.get("completion_tokens", 0)
+    usage = result.get("usage") or {}
+    input_tokens = _safe_int(usage.get("prompt_tokens"))
+    output_tokens = _safe_int(usage.get("completion_tokens"))
 
     await record_usage(
         model_name=result.get("model", used_model),
@@ -142,3 +142,11 @@ def _raise_for_error_type(
     if error_type == "rate_limit":
         raise RateLimit(message) from cause
     raise AllModelsFailed(message) from cause
+
+
+def _safe_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
