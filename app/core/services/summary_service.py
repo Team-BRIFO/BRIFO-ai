@@ -28,7 +28,10 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
 
     started = time.perf_counter()
     try:
-        llm_response = await call_llm(prompt, primary_model, fallback_model)
+        llm_response = await call_llm(
+            prompt, primary_model, fallback_model,
+            agent_type="SUMMARY", task_type="news_summary"
+    )
     except BrifoAIException:
         raise
     except Exception as exc:
