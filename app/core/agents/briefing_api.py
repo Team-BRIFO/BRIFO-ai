@@ -3,6 +3,7 @@
 """
 
 import json
+import logging
 
 from pydantic import ValidationError
 
@@ -18,6 +19,8 @@ from app.schemas.briefing import (
     NewsInput,
     RecentDecision,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 async def generate_briefing(
@@ -68,19 +71,23 @@ async def generate_briefing(
 async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> None:
     """
     호출은 성공했으나 파싱/검증에 실패했을 때
-    실패 이벤트만 별도로 남긴다.
+    실패 이벤트만 별도로 남긴다
+    토큰은 2배로 집계되지 않도록 0으로 기록한다 
     """
-    await record_usage(
-        model_name=llm_response.get("model", "unknown"),
-        agent_type=agent_type,
-        task_type="briefing",
-        input_tokens=0,
-        output_tokens=0,
-        latency_ms=0.0,
-        fallback_used=llm_response.get("fallback_used", False),
-        status="error",
-        error_type="parse_error",
-    )
+    try:
+        await record_usage(
+            model_name=llm_response.get("model", "unknown"),
+            agent_type=agent_type,
+            task_type="briefing",
+            input_tokens=0,
+            output_tokens=0,
+            latency_ms=0.0,
+            fallback_used=llm_response.get("fallback_used", False),
+            status="error",
+            error_type="parse_error",
+        )
+    except Exception:
+        _logger.exception("파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)")
 
 
 async def generate_personal_comment(
@@ -104,6 +111,7 @@ async def generate_personal_comment(
         fallback_model,
         agent_type=agent_type,
         task_type="personal",
+        require_json=False,
     )
 
     return llm_response["content"].strip()

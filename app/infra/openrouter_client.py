@@ -5,13 +5,18 @@ http_client.py의 공유 클라이언트를 사용해 실제 LLM을 호출한다
 primary 모델이 실패하면 fallback 모델로 1회 재시도하고, 최종 실패 시 원인에 맞는 예외(LLMTimeout / RateLimit / AllModelsFailed)를 던진다.
 """
 
+import logging
 import time
+from typing import Any
+
 import httpx
+
 from app.exceptions import AllModelsFailed, LLMTimeout, RateLimit
 from app.infra.http_client import get_openrouter_client
 from app.infra.usage_tracker import record_usage
 
 _COMPLETIONS_PATH = "/chat/completions"
+_logger = logging.getLogger(__name__)
 
 
 async def call_llm(
@@ -21,6 +26,7 @@ async def call_llm(
     *,
     agent_type: str,
     task_type: str,
+    require_json: bool = True,
 ) -> dict:
     """
     LLM을 호출한다. primary 실패 시 fallback으로 1회 재시도한다.
@@ -33,12 +39,11 @@ async def call_llm(
         "content": str
     }
 
-    primary·fallback 둘 다 실패하면 마지막 실패 원인에 맞는 예외를 던진다
-    (타임아웃 → LLMTimeout, 한도초과 → RateLimit, 그 외 → AllModelsFailed).
+    예상 가능한 HTTP·응답 검증 오류만 fallback 처리하며,
+    최종 실패 시 원인에 맞는 예외를 발생시킨다
 
-    task_type이 "personal"이면 response_format(JSON 강제)을 요청하지 않는다.
+    require_json=False이면 JSON 응답 형식을 강제하지 않는다.
     """
-    require_json = task_type != "personal"
     client = get_openrouter_client()
     started = time.perf_counter()
 
@@ -46,17 +51,17 @@ async def call_llm(
         result = await _try_model(client, primary_model, prompt, require_json=require_json)
         fallback_used = False
         used_model = primary_model
-    except Exception:
+    except (httpx.HTTPError, ValueError):
         try:
             result = await _try_model(
                 client, fallback_model, prompt, require_json=require_json
             )
             fallback_used = True
             used_model = fallback_model
-        except Exception as fallback_exc:
+        except (httpx.HTTPError, ValueError) as fallback_exc:
             latency_ms = (time.perf_counter() - started) * 1000
             error_type = _classify_error(fallback_exc)
-            await record_usage(
+            await _record_usage_safely(
                 model_name=fallback_model,
                 agent_type=agent_type,
                 task_type=task_type,
@@ -70,12 +75,14 @@ async def call_llm(
             _raise_for_error_type(error_type, primary_model, fallback_model, fallback_exc)
 
     latency_ms = (time.perf_counter() - started) * 1000
-    usage = result.get("usage") or {}
+    usage = result.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
     input_tokens = _safe_int(usage.get("prompt_tokens"))
     output_tokens = _safe_int(usage.get("completion_tokens"))
 
-    await record_usage(
-        model_name=result.get("model", used_model),
+    await _record_usage_safely(
+        model_name=result.get("model") or used_model,
         agent_type=agent_type,
         task_type=task_type,
         input_tokens=input_tokens,
@@ -86,7 +93,7 @@ async def call_llm(
     )
 
     return {
-        "model": result.get("model", used_model),
+        "model": result.get("model") or used_model,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "fallback_used": fallback_used,
@@ -99,7 +106,9 @@ async def _try_model(
 ) -> dict:
     """
     모델 1개에 대해 1회 호출을 시도한다.
-    require_json이 True일 때만 response_format(JSON 강제)을 요청한다.
+
+    choices, message, content가 없거나 생성 중 오류가 발생하면
+    ValueError를 발생시켜 fallback으로 넘긴다.
     """
     payload = {
         "model": model,
@@ -112,16 +121,26 @@ async def _try_model(
     response.raise_for_status()
     result = response.json()
 
+    if not isinstance(result, dict):
+        raise ValueError(f"'{model}' 응답이 객체 형식이 아닙니다.")
+
     choices = result.get("choices")
-    if not choices:
-        raise ValueError(f"'{model}' 응답에 choices가 없습니다.")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError(f"'{model}' 응답에 유효한 choices가 없습니다.")
 
     choice = choices[0]
-    if choice.get("finish_reason") == "error":
-        raise ValueError(f"'{model}' 생성 중 실패했습니다 (finish_reason=error).")
+    if not isinstance(choice, dict):
+        raise ValueError(f"'{model}' 응답의 choice 형식이 올바르지 않습니다.")
 
-    content = choice.get("message", {}).get("content")
-    if not content:
+    if choice.get("finish_reason") == "error":
+        raise ValueError(f"'{model}' 생성이 실패했습니다 (finish_reason=error).")
+
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise ValueError(f"'{model}' 응답에 유효한 message가 없습니다.")
+
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
         raise ValueError(f"'{model}' 응답에 content가 없습니다.")
 
     return result
@@ -153,8 +172,20 @@ def _raise_for_error_type(
 
 
 def _safe_int(value: object) -> int:
-    if isinstance(value, int):
+    """0 이상의 정수만 허용하고, 그 외 값은 0으로 처리한다."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value >= 0:
         return value
-    if isinstance(value, float):
-        return int(value)
     return 0
+
+
+async def _record_usage_safely(**kwargs: Any) -> None:
+    """
+    사용량을 기록한다.
+    기록 실패가 LLM 호출 결과에 영향을 주지 않도록 예외는 로그만 남긴다.
+    """
+    try:
+        await record_usage(**kwargs)
+    except Exception:
+        _logger.exception("record_usage 기록 실패 (LLM 호출 결과에는 영향 없음)")
