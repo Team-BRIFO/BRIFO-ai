@@ -2,6 +2,16 @@
 브리핑 생성 기능의 외부 연동 인터페이스
 """
 
+import json
+import logging
+
+from pydantic import ValidationError
+
+from app.core.agents.llm_router import select_briefing_model, select_personal_model
+from app.core.agents.prompt_builder import build_briefing_prompt, build_personal_prompt
+from app.exceptions import InvalidLLMResponse
+from app.infra.openrouter_client import call_llm
+from app.infra.usage_tracker import record_usage
 from app.schemas.briefing import (
     AgentType,
     BriefingConclusion,
@@ -10,29 +20,115 @@ from app.schemas.briefing import (
     RecentDecision,
 )
 
+_logger = logging.getLogger(__name__)
+
+
+def _strip_markdown_fence(content: str) -> str:
+    """
+    LLM 응답이 ```json ... ``` 형태의 Markdown 코드블록으로 감싸진 경우
+    바깥쪽 코드블록 표시를 제거하고 JSON 문자열만 반환한다.
+
+    코드블록 형식이 아니면 앞뒤 공백만 제거한 원문을 반환한다.
+    """
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[-1].strip() == "```":
+            lines = lines[:-1]
+        lines = lines[1:]
+        text = "\n".join(lines).strip()
+    return text
+
 
 async def generate_briefing(
-    news: NewsInput,  # BE가 전달한 카드뉴스
-    agent_type: AgentType,  # "ROOKIE" | "TANKER" | "PRO"
-    level_range: str,  # "1-3" | "4-6" | "7-10"
+    news_cards: list[NewsInput],
+    agent_type: AgentType,
+    level_range: str,
 ) -> CommonBriefing:
     """
     사원 1명의 공통 분석 브리핑을 생성한다.
 
-    공통 분석 캐시 확인 → 프롬프트 생성 → 모델 선택 → LLM 호출 → 캐시 저장
+    프롬프트 생성 → 모델 선택 → LLM 호출 →
+    응답 JSON 파싱 → CommonBriefing 검증
     """
-    ...
+    prompt = build_briefing_prompt(agent_type, news_cards, level_range)
+    primary_model, fallback_model = select_briefing_model(agent_type)
+
+    llm_response = await call_llm(
+        prompt,
+        primary_model,
+        fallback_model,
+        agent_type=agent_type,
+        task_type="briefing",
+    )
+
+    try:
+        parsed = json.loads(_strip_markdown_fence(llm_response["content"]))
+    except json.JSONDecodeError as exc:
+        await _record_parse_failure(llm_response, agent_type)
+        raise InvalidLLMResponse("AI 응답을 JSON으로 해석할 수 없습니다.") from exc
+
+    try:
+        return CommonBriefing(
+            agent_type=agent_type,
+            direction=parsed["direction"],
+            confidence_rate=parsed["confidenceRate"],
+            headline=parsed["headline"],
+            summary=parsed["summary"],
+            content_text=parsed["contentText"],
+            one_liner=parsed["oneLiner"],
+            model_name=llm_response["model"],
+            cached=False,
+        )
+    except (KeyError, TypeError, ValidationError) as exc:
+        await _record_parse_failure(llm_response, agent_type)
+        raise InvalidLLMResponse("AI 응답이 정해진 형식과 다릅니다.") from exc
+
+
+async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> None:
+    """
+    호출은 성공했으나 파싱/검증에 실패했을 때
+    실패 이벤트만 별도로 남긴다
+    토큰은 2배로 집계되지 않도록 0으로 기록한다 
+    """
+    try:
+        await record_usage(
+            model_name=llm_response.get("model", "unknown"),
+            agent_type=agent_type,
+            task_type="briefing",
+            input_tokens=0,
+            output_tokens=0,
+            latency_ms=0.0,
+            fallback_used=llm_response.get("fallback_used", False),
+            status="error",
+            error_type="parse_error",
+        )
+    except Exception:
+        _logger.exception("파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)")
 
 
 async def generate_personal_comment(
+    agent_type: AgentType,
     user_id: str,
     briefing_id: str,
     briefing_conclusion: BriefingConclusion,
     recent_decisions: list[RecentDecision],
-) -> tuple[str, str | None]:  # (personal_intro, personal_outro)
+) -> str:
     """
-    개인화 코멘트를 생성한다.
+    개인화 코멘트(personalComment)를 생성한다.
 
-    개인화 캐시 확인 → 개인화 프롬프트 생성 → LLM 호출 → 캐시 저장.
+    개인화 프롬프트 → 모델 선택 → LLM 호출 → 반환
     """
-    ...
+    prompt = build_personal_prompt(agent_type, briefing_conclusion, recent_decisions)
+    primary_model, fallback_model = select_personal_model()
+
+    llm_response = await call_llm(
+        prompt,
+        primary_model,
+        fallback_model,
+        agent_type=agent_type,
+        task_type="personal",
+        require_json=False,
+    )
+
+    return llm_response["content"].strip()

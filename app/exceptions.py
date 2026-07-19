@@ -59,3 +59,9 @@ class AllModelsFailed(BrifoAIException):
     code = "BRIEFING502"
     message = "AI 분석 생성에 실패했습니다."
     status_code = 502
+
+
+class InvalidLLMResponse(BrifoAIException):
+    code = "BRIEFING502"
+    message = "AI 분석 생성에 실패했습니다."
+    status_code = 502
