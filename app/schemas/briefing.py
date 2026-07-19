@@ -67,7 +67,6 @@ class PersonalComment(BaseModel):
 
 
 class BriefingResult(BaseModel):
-    card_id: str = Field(serialization_alias="cardId")
     briefings: list[AgentBriefing]
 
     model_config = {"populate_by_name": True}
