@@ -3,10 +3,12 @@
 뉴스 원문을 LLM으로 요약해 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어) 리스트를 생성한다.
 """
 
+import json
 import time
 
 from pydantic import ValidationError
 
+from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_summary_model
 from app.exceptions import AllModelsFailed, BrifoAIException, InvalidRequest
 from app.infra.openrouter_client import call_llm
@@ -84,10 +86,15 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
 
 def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
     """
-    LLM 응답(llm_response["content"] = {"cardNews": [...]})을 CardNewsItem으로 검증한다.
-    스키마 위반(keywords/points 길이 불일치 등) 시 InvalidRequest로 매핑한다.
+    LLM 응답(llm_response["content"] = JSON 문자열 {"cardNews": [...]})을 CardNewsItem으로 검증한다.
+    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidRequest로 매핑한다.
     """
     try:
-        return [CardNewsItem(**item) for item in llm_response["content"]["cardNews"]]
+        parsed = json.loads(strip_markdown_fence(llm_response["content"]))
+    except json.JSONDecodeError as exc:
+        raise InvalidRequest("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+
+    try:
+        return [CardNewsItem(**item) for item in parsed["cardNews"]]
     except (ValidationError, KeyError, TypeError) as exc:
         raise InvalidRequest("카드뉴스 생성 결과가 유효하지 않습니다.") from exc

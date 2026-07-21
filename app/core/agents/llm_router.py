@@ -17,6 +17,11 @@ _PERSONAL_MODEL: tuple[str, str] = (
     "anthropic/claude-haiku-4.5",
     "google/gemini-3-flash-preview",
 )
+
+_SUMMARY_MODEL: tuple[str, str] = (
+    "google/gemini-3-flash-preview",
+    "anthropic/claude-haiku-4.5",
+)
  
  
 def select_briefing_model(agent_type: AgentType) -> tuple[str, str]:
@@ -42,4 +47,4 @@ def select_summary_model() -> tuple[str, str]:
     카드뉴스 요약용 모델 선택
     반환: (primary_model, fallback_model)
     """
-    ...
+    return _SUMMARY_MODEL
