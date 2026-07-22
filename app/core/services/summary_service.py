@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_summary_model
-from app.exceptions import InvalidRequest
+from app.exceptions import InvalidLLMResponse, InvalidRequest
 from app.infra.openrouter_client import call_llm
 from app.infra.usage_tracker import record_usage
 from app.schemas.news import CardNewsGenerateRequest, CardNewsItem, CardNewsResult
@@ -38,7 +38,7 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
 
     try:
         card_news = _parse_card_news(llm_response)
-    except InvalidRequest:
+    except InvalidLLMResponse:
         await _record_parse_failure(llm_response)
         raise
 
@@ -70,17 +70,17 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
 def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
     """
     LLM 응답(llm_response["content"] = JSON 문자열 {"cardNews": [...]})을 CardNewsItem으로 검증한다.
-    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidRequest로 매핑한다.
+    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidLLMResponse로 매핑한다.
     """
     try:
         parsed = json.loads(strip_markdown_fence(llm_response["content"]))
     except json.JSONDecodeError as exc:
-        raise InvalidRequest("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+        raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
 
     try:
         return [CardNewsItem(**item) for item in parsed["cardNews"]]
     except (ValidationError, KeyError, TypeError) as exc:
-        raise InvalidRequest("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+        raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
 
 
 async def _record_parse_failure(llm_response: dict) -> None:
@@ -101,4 +101,4 @@ async def _record_parse_failure(llm_response: dict) -> None:
             error_type="parse_error",
         )
     except Exception:
-        _logger.exception("파싱 실패 usage 기록 실패 (InvalidRequest 발생에는 영향 X)")
+        _logger.exception("파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)")
