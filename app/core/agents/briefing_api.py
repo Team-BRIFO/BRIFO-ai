@@ -7,6 +7,7 @@ import logging
 
 from pydantic import ValidationError
 
+from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_briefing_model, select_personal_model
 from app.core.agents.prompt_builder import build_briefing_prompt, build_personal_prompt
 from app.exceptions import InvalidLLMResponse
@@ -21,23 +22,6 @@ from app.schemas.briefing import (
 )
 
 _logger = logging.getLogger(__name__)
-
-
-def _strip_markdown_fence(content: str) -> str:
-    """
-    LLM 응답이 ```json ... ``` 형태의 Markdown 코드블록으로 감싸진 경우
-    바깥쪽 코드블록 표시를 제거하고 JSON 문자열만 반환한다.
-
-    코드블록 형식이 아니면 앞뒤 공백만 제거한 원문을 반환한다.
-    """
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        if lines[-1].strip() == "```":
-            lines = lines[:-1]
-        lines = lines[1:]
-        text = "\n".join(lines).strip()
-    return text
 
 
 async def generate_briefing(
@@ -63,7 +47,7 @@ async def generate_briefing(
     )
 
     try:
-        parsed = json.loads(_strip_markdown_fence(llm_response["content"]))
+        parsed = json.loads(strip_markdown_fence(llm_response["content"]))
     except json.JSONDecodeError as exc:
         await _record_parse_failure(llm_response, agent_type)
         raise InvalidLLMResponse("AI 응답을 JSON으로 해석할 수 없습니다.") from exc

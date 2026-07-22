@@ -3,21 +3,26 @@
 뉴스 원문을 LLM으로 요약해 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어) 리스트를 생성한다.
 """
 
-import time
+import json
+import logging
 
 from pydantic import ValidationError
 
+from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_summary_model
-from app.exceptions import AllModelsFailed, BrifoAIException, InvalidRequest
+from app.exceptions import InvalidLLMResponse, InvalidRequest
 from app.infra.openrouter_client import call_llm
 from app.infra.usage_tracker import record_usage
 from app.schemas.news import CardNewsGenerateRequest, CardNewsItem, CardNewsResult
+
+_logger = logging.getLogger(__name__)
 
 
 async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
     """
     뉴스 원문을 카드뉴스로 요약한다.
-    프롬프트 생성 → LLM 호출 → 결과 검증 → 사용량 기록 순으로 진행한다.
+    프롬프트 생성 → LLM 호출 → 결과 검증 순으로 진행한다.
+    LLM 호출 성공/실패 usage는 call_llm 내부에서 이미 기록하므로 여기서는 중복 기록하지 않는다.
     """
     # TODO: newsId 기준 24h 캐시 연동
     if not request.news_content.strip():
@@ -26,36 +31,16 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
     prompt = _build_prompt(request)
     primary_model, fallback_model = select_summary_model()
 
-    started = time.perf_counter()
-    try:
-        llm_response = await call_llm(
-            prompt, primary_model, fallback_model,
-            agent_type="SUMMARY", task_type="news_summary"
-    )
-    except BrifoAIException:
-        raise
-    except Exception as exc:
-        # TODO: call_llm이 자체적으로 LLMTimeout/RateLimit/AllModelsFailed를 던지도록 구현되면 제거
-        raise AllModelsFailed() from exc
-    latency_ms = (time.perf_counter() - started) * 1000
-
-    usage_kwargs = dict(
-        model_name=llm_response.get("model", primary_model),
-        agent_type="SUMMARY",
-        task_type="news_summary",
-        input_tokens=llm_response.get("input_tokens", 0),
-        output_tokens=llm_response.get("output_tokens", 0),
-        latency_ms=latency_ms,
-        fallback_used=llm_response.get("fallback_used", False),
+    llm_response = await call_llm(
+        prompt, primary_model, fallback_model,
+        agent_type="SUMMARY", task_type="news_summary"
     )
 
     try:
         card_news = _parse_card_news(llm_response)
-    except InvalidRequest:
-        await record_usage(**usage_kwargs, status="error", error_type="parse_error")
+    except InvalidLLMResponse:
+        await _record_parse_failure(llm_response)
         raise
-
-    await record_usage(**usage_kwargs)
 
     return CardNewsResult(news_id=request.news_id, card_news=card_news)
 
@@ -84,10 +69,36 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
 
 def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
     """
-    LLM 응답(llm_response["content"] = {"cardNews": [...]})을 CardNewsItem으로 검증한다.
-    스키마 위반(keywords/points 길이 불일치 등) 시 InvalidRequest로 매핑한다.
+    LLM 응답(llm_response["content"] = JSON 문자열 {"cardNews": [...]})을 CardNewsItem으로 검증한다.
+    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidLLMResponse로 매핑한다.
     """
     try:
-        return [CardNewsItem(**item) for item in llm_response["content"]["cardNews"]]
+        parsed = json.loads(strip_markdown_fence(llm_response["content"]))
+    except json.JSONDecodeError as exc:
+        raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+
+    try:
+        return [CardNewsItem(**item) for item in parsed["cardNews"]]
     except (ValidationError, KeyError, TypeError) as exc:
-        raise InvalidRequest("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+        raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+
+
+async def _record_parse_failure(llm_response: dict) -> None:
+    """
+    호출은 성공했으나 파싱/검증에 실패했을 때 실패 이벤트만 별도로 기록한다.
+    call_llm이 이미 성공 usage를 기록했으므로 토큰은 2배로 집계되지 않도록 0으로 기록한다.
+    """
+    try:
+        await record_usage(
+            model_name=llm_response.get("model", "unknown"),
+            agent_type="SUMMARY",
+            task_type="news_summary",
+            input_tokens=0,
+            output_tokens=0,
+            latency_ms=0.0,
+            fallback_used=llm_response.get("fallback_used", False),
+            status="error",
+            error_type="parse_error",
+        )
+    except Exception:
+        _logger.exception("파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)")
