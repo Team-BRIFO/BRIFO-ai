@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_summary_model
-from app.exceptions import AllModelsFailed, BrifoAIException, InvalidRequest
+from app.exceptions import InvalidRequest
 from app.infra.openrouter_client import call_llm
 from app.infra.usage_tracker import record_usage
 from app.schemas.news import CardNewsGenerateRequest, CardNewsItem, CardNewsResult
@@ -31,16 +31,10 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
     prompt = _build_prompt(request)
     primary_model, fallback_model = select_summary_model()
 
-    try:
-        llm_response = await call_llm(
-            prompt, primary_model, fallback_model,
-            agent_type="SUMMARY", task_type="news_summary"
-        )
-    except BrifoAIException:
-        raise
-    except Exception as exc:
-        # TODO: call_llm이 자체적으로 LLMTimeout/RateLimit/AllModelsFailed를 던지도록 구현되면 제거
-        raise AllModelsFailed() from exc
+    llm_response = await call_llm(
+        prompt, primary_model, fallback_model,
+        agent_type="SUMMARY", task_type="news_summary"
+    )
 
     try:
         card_news = _parse_card_news(llm_response)
