@@ -7,6 +7,9 @@ asyncio.gather로 동시에 생성해 취합한다.
 import asyncio
 import hashlib
 import json
+from datetime import datetime, timedelta
+from datetime import time as dt_time
+from zoneinfo import ZoneInfo
 
 from app.core.agents.briefing_api import generate_briefing, generate_personal_comment
 from app.exceptions import InvalidRequest
@@ -27,6 +30,25 @@ _CACHE_VERSION = "v1"
 _LOCK_TTL_SECONDS = 30
 _LOCK_WAIT_ATTEMPTS = 10
 _LOCK_WAIT_INTERVAL = 0.5
+
+_KST = ZoneInfo("Asia/Seoul")
+_SETTLEMENT_TIME = dt_time(15, 30)  # 정산 시각
+
+
+def _seconds_until_next_settlement() -> int:
+    now = datetime.now(_KST)
+    today_settlement = now.replace(
+        hour=_SETTLEMENT_TIME.hour,
+        minute=_SETTLEMENT_TIME.minute,
+        second=0,
+        microsecond=0,
+    )
+    next_settlement = (
+        today_settlement
+        if now < today_settlement
+        else today_settlement + timedelta(days=1)
+    )
+    return max(1, int((next_settlement - now).total_seconds()))
 
 
 async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult:
@@ -138,7 +160,12 @@ async def _generate_and_cache_personal(
     personal_comment = await generate_personal_comment(
         agent_type, user_id, briefing_id, conclusion, recent_decisions
     )
-    await set_personal(user_id, briefing_id, personal_comment)
+    await set_personal(
+        user_id,
+        briefing_id,
+        personal_comment,
+        ttl_seconds=_seconds_until_next_settlement(),
+    )
     return personal_comment
 
 
