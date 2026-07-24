@@ -31,20 +31,15 @@ _KST = ZoneInfo("Asia/Seoul")
 _SETTLEMENT_TIME = dt_time(15, 30)  # 정산 시각
 
 
-def _seconds_until_next_settlement() -> int:
+def _next_settlement_at() -> datetime:
     now = datetime.now(_KST)
-    today_settlement = now.replace(
+    settlement = now.replace(
         hour=_SETTLEMENT_TIME.hour,
         minute=_SETTLEMENT_TIME.minute,
         second=0,
         microsecond=0,
     )
-    next_settlement = (
-        today_settlement
-        if now < today_settlement
-        else today_settlement + timedelta(days=1)
-    )
-    return max(1, int((next_settlement - now).total_seconds()))
+    return settlement if now < settlement else settlement + timedelta(days=1)
 
 
 async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult:
@@ -145,9 +140,13 @@ async def _generate_and_cache_personal(
     conclusion: BriefingConclusion,
     recent_decisions: list[RecentDecision],
 ) -> str:
-    ttl_seconds = _seconds_until_next_settlement()
+    expires_at = _next_settlement_at()
+
     personal_comment = await generate_personal_comment(
         agent_type, user_id, briefing_id, conclusion, recent_decisions
     )
-    await set_personal(user_id, briefing_id, personal_comment, ttl_seconds=ttl_seconds)
+
+    if datetime.now(_KST) < expires_at:
+        await set_personal(user_id, briefing_id, personal_comment, expires_at=expires_at)
+
     return personal_comment

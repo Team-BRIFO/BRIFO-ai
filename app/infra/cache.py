@@ -6,6 +6,7 @@ Redis 캐싱
 """
 
 import logging
+from datetime import datetime
 
 from pydantic import ValidationError
 
@@ -78,11 +79,11 @@ async def get_personal(user_id: str, briefing_id: str) -> str | None:
 
 
 async def set_personal(
-    user_id: str, briefing_id: str, value: str, ttl_seconds: int = _TTL_SECONDS
+    user_id: str, briefing_id: str, value: str, expires_at: datetime
 ) -> None:
     try:
         client = get_redis_client()
-        await client.set(_personal_key(user_id, briefing_id), value, ex=ttl_seconds)
+        await client.set(_personal_key(user_id, briefing_id), value, exat=expires_at)
     except Exception:
         _logger.exception("개인화 코멘트 캐시 저장 실패, 캐시 없이 진행합니다.")
 
