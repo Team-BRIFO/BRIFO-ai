@@ -5,18 +5,28 @@ asyncio.gather로 동시에 생성해 취합한다.
 """
 
 import asyncio
+import hashlib
+import json
 
 from app.core.agents.briefing_api import generate_briefing, generate_personal_comment
 from app.exceptions import InvalidRequest
+from app.infra.cache import get_briefing, get_personal, set_briefing, set_personal
+from app.infra.redis_client import get_redis_client
 from app.schemas.briefing import (
     AgentBriefing,
     AgentType,
     BriefingConclusion,
     BriefingGenerateRequest,
     BriefingResult,
+    CommonBriefing,
     NewsInput,
     RecentDecision,
 )
+
+_CACHE_VERSION = "v1"
+_LOCK_TTL_SECONDS = 30
+_LOCK_WAIT_ATTEMPTS = 10
+_LOCK_WAIT_INTERVAL = 0.5
 
 
 async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult:
@@ -44,6 +54,20 @@ async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult
     return BriefingResult(briefings=list(briefings))
 
 
+def build_briefing_cache_id(news_cards: list[NewsInput]) -> str:
+    payload = [
+        card.model_dump(by_alias=True, mode="json")
+        for card in sorted(news_cards, key=lambda card: card.card_id)
+    ]
+    serialized = json.dumps(
+        {"version": _CACHE_VERSION, "newsCards": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
 async def _build_agent_briefing(
     *,
     news_cards: list[NewsInput],
@@ -54,27 +78,91 @@ async def _build_agent_briefing(
 ) -> AgentBriefing:
     """
     사원 1명의 공통 분석과, 그 결론을 바탕으로 한 개인화 코멘트를 생성한다.
+    캐시 확인 → LLM 호출 → 캐시 저장 순서로 진행한다.
+    동시 요청이 겹치면 분산 락으로 LLM 중복 호출을 막는다.
     """
-    common = await generate_briefing(news_cards, agent_type, level_range)
+    cache_id = build_briefing_cache_id(news_cards)
+    briefing_id = f"{cache_id}:{agent_type}:{level_range}"
 
-    combined_card_id = ",".join(sorted(c.card_id for c in news_cards))   #캐시 키로 쓰일 카드 전체 조합 식별자
-    briefing_id = f"{combined_card_id}:{agent_type}:{level_range}"
+    common = await get_briefing(cache_id, agent_type, level_range)
+    if common is None:
+        common = await _with_lock(
+            lock_key=f"lock:briefing:{briefing_id}",
+            get_cached=lambda: get_briefing(cache_id, agent_type, level_range),
+            generate=lambda: _generate_and_cache_briefing(
+                news_cards, agent_type, level_range, cache_id
+            ),
+        )
+    else:
+        common = common.model_copy(update={"cached": True})
+
     conclusion = BriefingConclusion(
         headline=common.headline,
         direction=common.direction,
         confidenceRate=common.confidence_rate,
     )
 
-    personal_comment = await generate_personal_comment(
-        agent_type,
-        user_id,
-        briefing_id,
-        conclusion,
-        recent_decisions,
-    )
+    personal_comment = await get_personal(user_id, briefing_id)
+    personal_cached = personal_comment is not None
+    if personal_comment is None:
+        personal_comment = await _with_lock(
+            lock_key=f"lock:personal:{user_id}:{briefing_id}",
+            get_cached=lambda: get_personal(user_id, briefing_id),
+            generate=lambda: _generate_and_cache_personal(
+                agent_type, user_id, briefing_id, conclusion, recent_decisions
+            ),
+        )
 
     return AgentBriefing(
         **common.model_dump(),
         personal_comment=personal_comment,
-        personal_cached=False,  # TODO: 개인화 캐시 연동 후 실제 히트 여부로 교체
+        personal_cached=personal_cached,
     )
+
+
+async def _generate_and_cache_briefing(
+    news_cards: list[NewsInput], agent_type: AgentType, level_range: str, cache_id: str
+) -> CommonBriefing:
+    common = await generate_briefing(news_cards, agent_type, level_range)
+    await set_briefing(cache_id, agent_type, level_range, common)
+    return common
+
+
+async def _generate_and_cache_personal(
+    agent_type: AgentType,
+    user_id: str,
+    briefing_id: str,
+    conclusion: BriefingConclusion,
+    recent_decisions: list[RecentDecision],
+) -> str:
+    personal_comment = await generate_personal_comment(
+        agent_type, user_id, briefing_id, conclusion, recent_decisions
+    )
+    await set_personal(user_id, briefing_id, personal_comment)
+    return personal_comment
+
+
+async def _with_lock(*, lock_key: str, get_cached, generate):
+    try:
+        client = get_redis_client()
+        acquired = await client.set(lock_key, "1", nx=True, ex=_LOCK_TTL_SECONDS)
+    except Exception:
+        acquired = None
+
+    if acquired:
+        try:
+            return await generate()
+        finally:
+            try:
+                client = get_redis_client()
+                await client.delete(lock_key)
+            except Exception:
+                pass
+
+    for _ in range(_LOCK_WAIT_ATTEMPTS):
+        await asyncio.sleep(_LOCK_WAIT_INTERVAL)
+        cached = await get_cached()
+        if cached is not None:
+            return cached
+
+    return await generate()
