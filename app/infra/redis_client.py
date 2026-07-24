@@ -19,7 +19,13 @@ def init_redis_client() -> None:
     if _client is not None:
         raise RuntimeError("Redis client가 이미 초기화되어 있습니다.")
     settings = get_settings()
-    _client = redis.from_url(settings.redis_url, decode_responses=True)
+    _client = redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+        max_connections=20,
+    )
 
 
 async def close_redis_client() -> None:

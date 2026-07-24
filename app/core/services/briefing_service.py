@@ -145,13 +145,9 @@ async def _generate_and_cache_personal(
     conclusion: BriefingConclusion,
     recent_decisions: list[RecentDecision],
 ) -> str:
+    ttl_seconds = _seconds_until_next_settlement()
     personal_comment = await generate_personal_comment(
         agent_type, user_id, briefing_id, conclusion, recent_decisions
     )
-    await set_personal(
-        user_id,
-        briefing_id,
-        personal_comment,
-        ttl_seconds=_seconds_until_next_settlement(),
-    )
+    await set_personal(user_id, briefing_id, personal_comment, ttl_seconds=ttl_seconds)
     return personal_comment
