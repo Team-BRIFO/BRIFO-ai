@@ -5,6 +5,8 @@ Redis 캐싱
 개인화 레이어 코멘트 - TTL 다음 정산 시각(15:30 KST)까지
 """
 
+import hashlib
+import json
 import logging
 from datetime import datetime
 
@@ -29,9 +31,11 @@ def _personal_key(user_id: str, briefing_id: str) -> str:
     return f"briefing:personal:{user_id}:{briefing_id}"
 
 
-# 카드뉴스 요약: summary:{news_id} — 전역 공유
-def _summary_key(news_id: str) -> str:
-    return f"summary:{news_id}"
+# 카드뉴스 요약: summary:{news_id}:{exclude_terms 해시} — 전역 공유
+def _summary_key(news_id: str, exclude_terms: list[str]) -> str:
+    terms_json = json.dumps(sorted(exclude_terms), ensure_ascii=False)
+    terms_hash = hashlib.sha256(terms_json.encode()).hexdigest()
+    return f"summary:{news_id}:{terms_hash}"
 
 
 async def get_briefing(
@@ -88,8 +92,8 @@ async def set_personal(
         _logger.exception("개인화 코멘트 캐시 저장 실패, 캐시 없이 진행합니다.")
 
 
-async def get_summary(news_id: str) -> CardNewsResult | None:
-    key = _summary_key(news_id)
+async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult | None:
+    key = _summary_key(news_id, exclude_terms)
     try:
         client = get_redis_client()
         raw = await client.get(key)
@@ -107,11 +111,15 @@ async def get_summary(news_id: str) -> CardNewsResult | None:
         return None
 
 
-async def set_summary(news_id: str, value: CardNewsResult) -> None:
+async def set_summary(
+    news_id: str, exclude_terms: list[str], value: CardNewsResult
+) -> None:
     try:
         client = get_redis_client()
         await client.set(
-            _summary_key(news_id), value.model_dump_json(), ex=_TTL_SECONDS
+            _summary_key(news_id, exclude_terms),
+            value.model_dump_json(),
+            ex=_TTL_SECONDS,
         )
     except Exception:
         _logger.exception("카드뉴스 요약 캐시 저장 실패, 캐시 없이 진행합니다.")

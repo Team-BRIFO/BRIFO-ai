@@ -28,7 +28,7 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
     if not request.news_content.strip():
         raise InvalidRequest("newsContent는 비어 있을 수 없습니다.")
 
-    cached = await get_summary(request.news_id)
+    cached = await get_summary(request.news_id, request.exclude_terms)
     if cached is not None:
         return cached
 
@@ -47,7 +47,7 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
         raise
 
     result = CardNewsResult(news_id=request.news_id, card_news=card_news)
-    await set_summary(request.news_id, result)
+    await set_summary(request.news_id, request.exclude_terms, result)
     return result
 
 
