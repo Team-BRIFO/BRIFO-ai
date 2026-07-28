@@ -8,6 +8,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "httpx>=0.28.1",
     "pydantic-settings>=2.14.2",
+    "redis>=8.0.1",
+    "tzdata>=2026.3",
     "uvicorn[standard]>=0.30.0",
 ]
 

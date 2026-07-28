@@ -61,11 +61,6 @@ class BriefingConclusion(BaseModel):
     confidence_rate: int = Field(alias="confidenceRate")
 
 
-class PersonalComment(BaseModel):
-    personal_intro: str
-    personal_outro: str | None = None
-
-
 class BriefingResult(BaseModel):
     briefings: list[AgentBriefing]
 

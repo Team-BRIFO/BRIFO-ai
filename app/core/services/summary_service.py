@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.core.agents.llm_response import strip_markdown_fence
 from app.core.agents.llm_router import select_summary_model
 from app.exceptions import InvalidLLMResponse, InvalidRequest
+from app.infra.cache import get_summary, set_summary
 from app.infra.openrouter_client import call_llm
 from app.infra.usage_tracker import record_usage
 from app.schemas.news import CardNewsGenerateRequest, CardNewsItem, CardNewsResult
@@ -21,12 +22,15 @@ _logger = logging.getLogger(__name__)
 async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
     """
     뉴스 원문을 카드뉴스로 요약한다.
-    프롬프트 생성 → LLM 호출 → 결과 검증 순으로 진행한다.
+    캐시 확인 → 없으면 프롬프트 생성 → LLM 호출 → 결과 검증 → 캐시 저장 순으로 진행한다.
     LLM 호출 성공/실패 usage는 call_llm 내부에서 이미 기록하므로 여기서는 중복 기록하지 않는다.
     """
-    # TODO: newsId 기준 24h 캐시 연동
     if not request.news_content.strip():
         raise InvalidRequest("newsContent는 비어 있을 수 없습니다.")
+
+    cached = await get_summary(request.news_id, request.exclude_terms)
+    if cached is not None:
+        return cached
 
     prompt = _build_prompt(request)
     primary_model, fallback_model = select_summary_model()
@@ -42,7 +46,9 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
         await _record_parse_failure(llm_response)
         raise
 
-    return CardNewsResult(news_id=request.news_id, card_news=card_news)
+    result = CardNewsResult(news_id=request.news_id, card_news=card_news)
+    await set_summary(request.news_id, request.exclude_terms, result)
+    return result
 
 
 def _build_prompt(request: CardNewsGenerateRequest) -> str:
