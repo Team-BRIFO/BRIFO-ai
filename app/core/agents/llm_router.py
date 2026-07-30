@@ -8,18 +8,18 @@ LLM 모델 라우팅
 from app.schemas.briefing import AgentType
 
 _BRIEFING_MODELS: dict[AgentType, tuple[str, str]] = {
-    "ROOKIE": ("anthropic/claude-haiku-4.5", "google/gemini-3-flash-preview"),
-    "PRO": ("anthropic/claude-sonnet-4.6", "google/gemini-3.1-pro-preview"),
-    "TANKER": ("anthropic/claude-opus-4.8", "google/gemini-3.1-pro-preview"),
+    "ROOKIE": ("google/gemini-3.5-flash", "anthropic/claude-haiku-4.5"),
+    "TANKER": ("openai/gpt-5.3-chat", "anthropic/claude-sonnet-5"),
+    "PRO": ("anthropic/claude-sonnet-5", "openai/gpt-5.3-chat"),
 }
  
 _PERSONAL_MODEL: tuple[str, str] = (
     "anthropic/claude-haiku-4.5",
-    "google/gemini-3-flash-preview",
+    "google/gemini-3.5-flash-lite",
 )
 
 _SUMMARY_MODEL: tuple[str, str] = (
-    "google/gemini-3-flash-preview",
+    "google/gemini-3.5-flash-lite",
     "anthropic/claude-haiku-4.5",
 )
  
