@@ -8,6 +8,7 @@ Direction = Literal["UP", "DOWN", "NEUTRAL"]
 
 class NewsInput(BaseModel):
     card_id: str = Field(alias="cardId")
+    news_id: str = Field(alias="newsId")
     headline: str
     points: list[str]
 

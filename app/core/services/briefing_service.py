@@ -77,7 +77,7 @@ async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult
 
 async def _resolve_news_cards(news_cards: list[NewsInput]) -> list[NewsInput]:
     """
-    카드뉴스 요약 캐시(cardId 기준 news_id)에서 최신 headline/points를 조회해
+    카드뉴스 요약 캐시(newsId 기준)에서 최신 headline/points를 조회해
     요청으로 받은 news_cards를 캐시된 값으로 치환한다. 캐시 미스인 카드는 그대로 둔다.
     """
     resolved = await asyncio.gather(*(_resolve_news_card(card) for card in news_cards))
@@ -85,7 +85,7 @@ async def _resolve_news_cards(news_cards: list[NewsInput]) -> list[NewsInput]:
 
 
 async def _resolve_news_card(card: NewsInput) -> NewsInput:
-    cached = await get_latest_summary(card.card_id)
+    cached = await get_latest_summary(card.news_id)
     if cached is None or not cached.card_news:
         return card
 

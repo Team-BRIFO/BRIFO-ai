@@ -66,6 +66,8 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
         "- terms는 본문에 실제로 등장한 주식 용어 중 2~3개를 골라 surface(원문 표기)"
         "·term(정식 용어명)·definition(초보자용 설명)으로 작성한다. "
         "위의 '이미 출제된 용어'는 다시 고르지 않는다.\n"
+        "- cardNews 배열에는 카드를 정확히 1개만 담는다. 뉴스 원문에 다룰 내용이 여러 개여도 "
+        "하나의 카드로 종합한다.\n"
         "- 출력은 다른 설명 없이 JSON만 반환한다. 형식은 다음과 같다:\n"
         '{"cardNews": [{"headline": "string", "points": ["string", "string", "string"], '
         '"keywords": ["string", "string", "string"], '
@@ -76,7 +78,9 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
 def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
     """
     LLM 응답(llm_response["content"] = JSON 문자열 {"cardNews": [...]})을 CardNewsItem으로 검증한다.
-    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidLLMResponse로 매핑한다.
+    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치, 카드 개수 등) 시 InvalidLLMResponse로 매핑한다.
+    카드가 정확히 1개라는 보장은 브리핑 생성 단계의 카드뉴스 캐시 연동(뉴스 1건당 카드 1개를 전제로
+    news_id 기준으로 캐시를 조회함)이 성립하기 위한 전제 조건이다.
     """
     try:
         parsed = json.loads(strip_markdown_fence(llm_response["content"]))
@@ -84,9 +88,16 @@ def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
         raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
 
     try:
-        return [CardNewsItem(**item) for item in parsed["cardNews"]]
+        card_news = [CardNewsItem(**item) for item in parsed["cardNews"]]
     except (ValidationError, KeyError, TypeError) as exc:
         raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
+
+    if len(card_news) != 1:
+        raise InvalidLLMResponse(
+            f"카드뉴스는 정확히 1개여야 하지만 {len(card_news)}개가 생성되었습니다."
+        )
+
+    return card_news
 
 
 async def _record_parse_failure(llm_response: dict) -> None:
