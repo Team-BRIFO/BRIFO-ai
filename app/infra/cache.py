@@ -104,7 +104,8 @@ async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult 
         raw = await client.get(key)
         if raw is None:
             return None
-        return CardNewsResult.model_validate_json(raw)
+        result = CardNewsResult.model_validate_json(raw)
+        return await _validate_single_card(result, key)
     except ValidationError:
         _logger.exception(
             "카드뉴스 요약 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -141,7 +142,8 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
         raw = await client.get(key)
         if raw is None:
             return None
-        return CardNewsResult.model_validate_json(raw)
+        result = CardNewsResult.model_validate_json(raw)
+        return await _validate_single_card(result, key)
     except ValidationError:
         _logger.exception(
             "카드뉴스 최신 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -151,6 +153,23 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
     except Exception:
         _logger.exception("카드뉴스 최신 캐시 조회 실패, 캐시 미스로 처리합니다.")
         return None
+
+
+async def _validate_single_card(result: CardNewsResult, key: str) -> CardNewsResult | None:
+    """
+    카드뉴스는 정확히 1개여야 한다는 전제(_resolve_news_card가 card_news[0]을 그대로 씀)를
+    캐시 읽기 경로에서도 강제한다. 이 전제가 도입되기 전에 저장된 다중 카드 캐시가 TTL 동안
+    남아있을 수 있어, 신규 생성 시 검증(_parse_card_news)만으로는 충분하지 않다.
+    """
+    if len(result.card_news) == 1:
+        return result
+
+    _logger.warning(
+        "카드뉴스 캐시에 카드가 %d개 있어 단일 카드 전제가 깨져 삭제하고 캐시 미스로 처리합니다.",
+        len(result.card_news),
+    )
+    await _delete_key(key)
+    return None
 
 
 async def _delete_key(key: str) -> None:
