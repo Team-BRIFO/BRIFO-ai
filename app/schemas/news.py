@@ -23,9 +23,11 @@ class CardNewsItem(BaseModel):
     terms: list[Term]
 
     @model_validator(mode="after")
-    def _check_keywords_len(self):
-        if len(self.keywords) != len(self.points):
-            raise ValueError("keywords와 points의 길이가 일치해야 합니다.")
+    def _check_lengths(self):
+        if len(self.points) != 3:
+            raise ValueError("points는 정확히 3개여야 합니다.")
+        if len(self.keywords) != len(self.terms):
+            raise ValueError("keywords와 terms의 길이가 일치해야 합니다.")
         if not self.keywords:
             raise ValueError("keywords는 비어 있을 수 없습니다.")
         return self

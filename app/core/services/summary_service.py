@@ -62,16 +62,18 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
         "- 의견·추측·방향성(상승/하락 전망 등) 금지. 원문에 있는 사실만 전달한다.\n"
         "- headline은 20자 이내로 작성한다.\n"
         "- points는 정확히 3개, 각 40자 이내로 작성하며 수치는 원문 그대로 보존한다.\n"
-        "- keywords는 points와 동일한 개수(3개)로, 각 point를 대표하는 핵심어를 순서대로 작성한다.\n"
-        "- terms는 본문에 실제로 등장한 주식 용어 중 2~3개를 골라 surface(원문 표기)"
-        "·term(정식 용어명)·definition(초보자용 설명)으로 작성한다. "
-        "위의 '이미 출제된 용어'는 다시 고르지 않는다.\n"
+        "- keywords는 뉴스 원문에 실제로 등장한 어려운 주식 용어 중 2~3개를 원문 표기 그대로 골라 "
+        "작성한다. 위의 '이미 출제된 용어'는 다시 고르지 않는다.\n"
+        "- terms는 keywords 각각에 대해 순서대로 surface(keywords와 동일한 원문 표기)"
+        "·term(정식 용어명)·definition(초보자용 설명)을 작성한다. keywords와 terms는 개수가 "
+        "정확히 같아야 한다.\n"
         "- cardNews 배열에는 카드를 정확히 1개만 담는다. 뉴스 원문에 다룰 내용이 여러 개여도 "
         "하나의 카드로 종합한다.\n"
         "- 출력은 다른 설명 없이 JSON만 반환한다. 형식은 다음과 같다:\n"
         '{"cardNews": [{"headline": "string", "points": ["string", "string", "string"], '
-        '"keywords": ["string", "string", "string"], '
-        '"terms": [{"surface": "string", "term": "string", "definition": "string"}]}]}'
+        '"keywords": ["string", "string"], '
+        '"terms": [{"surface": "string", "term": "string", "definition": "string"}, '
+        '{"surface": "string", "term": "string", "definition": "string"}]}]}'
     )
 
 
