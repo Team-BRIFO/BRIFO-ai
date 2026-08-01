@@ -42,11 +42,14 @@ async def summarize_news(request: CardNewsGenerateRequest) -> CardNewsResult:
 
     try:
         card_news = _parse_card_news(llm_response)
+        result = CardNewsResult(news_id=request.news_id, card_news=card_news)
     except InvalidLLMResponse:
         await _record_parse_failure(llm_response)
         raise
+    except ValidationError as exc:
+        await _record_parse_failure(llm_response)
+        raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
 
-    result = CardNewsResult(news_id=request.news_id, card_news=card_news)
     await set_summary(request.news_id, request.exclude_terms, result)
     return result
 
@@ -80,9 +83,9 @@ def _build_prompt(request: CardNewsGenerateRequest) -> str:
 def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
     """
     LLM 응답(llm_response["content"] = JSON 문자열 {"cardNews": [...]})을 CardNewsItem으로 검증한다.
-    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치, 카드 개수 등) 시 InvalidLLMResponse로 매핑한다.
-    카드가 정확히 1개라는 보장은 브리핑 생성 단계의 카드뉴스 캐시 연동(뉴스 1건당 카드 1개를 전제로
-    news_id 기준으로 캐시를 조회함)이 성립하기 위한 전제 조건이다.
+    JSON 파싱 실패 또는 스키마 위반(keywords/points 길이 불일치 등) 시 InvalidLLMResponse로 매핑한다.
+    카드 개수(정확히 1개)는 CardNewsResult.card_news의 min_length/max_length 제약으로
+    별도 강제되며, 그 검증은 호출부(summarize_news)에서 CardNewsResult 생성 시 이루어진다.
     """
     try:
         parsed = json.loads(strip_markdown_fence(llm_response["content"]))
@@ -90,16 +93,9 @@ def _parse_card_news(llm_response: dict) -> list[CardNewsItem]:
         raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
 
     try:
-        card_news = [CardNewsItem(**item) for item in parsed["cardNews"]]
+        return [CardNewsItem(**item) for item in parsed["cardNews"]]
     except (ValidationError, KeyError, TypeError) as exc:
         raise InvalidLLMResponse("카드뉴스 생성 결과가 유효하지 않습니다.") from exc
-
-    if len(card_news) != 1:
-        raise InvalidLLMResponse(
-            f"카드뉴스는 정확히 1개여야 하지만 {len(card_news)}개가 생성되었습니다."
-        )
-
-    return card_news
 
 
 async def _record_parse_failure(llm_response: dict) -> None:

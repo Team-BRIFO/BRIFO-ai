@@ -105,7 +105,7 @@ async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult 
         if raw is None:
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_single_card(result, key, expected_news_id=news_id)
+        return await _validate_news_id(result, key, expected_news_id=news_id)
     except ValidationError:
         _logger.exception(
             "카드뉴스 요약 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -143,7 +143,7 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
         if raw is None:
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_single_card(result, key, expected_news_id=news_id)
+        return await _validate_news_id(result, key, expected_news_id=news_id)
     except ValidationError:
         _logger.exception(
             "카드뉴스 최신 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -155,34 +155,28 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
         return None
 
 
-async def _validate_single_card(
+async def _validate_news_id(
     result: CardNewsResult, key: str, *, expected_news_id: str
 ) -> CardNewsResult | None:
     """
-    캐시된 값이 (1) 조회하려던 news_id와 일치하고 (2) 카드가 정확히 1개인지를 검증한다.
-    _resolve_news_card()가 반환값의 card_news[0]을 그대로 다른 뉴스의 headline/points로
-    쓰기 때문에, 이 두 전제 중 하나라도 깨지면 엉뚱한 뉴스의 카드가 브리핑에 섞여 들어간다.
+    캐시된 값의 news_id가 조회하려던 news_id와 일치하는지 검증한다.
+    _resolve_news_card()가 반환값의 card_news[0]을 그대로 그 뉴스의 headline/points로 쓰기
+    때문에, news_id가 어긋나면 엉뚱한 뉴스의 카드가 브리핑에 섞여 들어간다.
+    카드 개수(정확히 1개)는 CardNewsResult.card_news의 min_length/max_length 제약으로
+    model_validate_json() 단계에서 이미 강제되므로 여기서 별도로 검사하지 않는다.
     """
-    if result.news_id != expected_news_id:
-        _logger.warning(
-            "카드뉴스 캐시 키(%s)의 news_id(%s)가 조회 대상(%s)과 달라 "
-            "삭제하고 캐시 미스로 처리합니다.",
-            key,
-            result.news_id,
-            expected_news_id,
-        )
-        await _delete_key(key)
-        return None
+    if result.news_id == expected_news_id:
+        return result
 
-    if len(result.card_news) != 1:
-        _logger.warning(
-            "카드뉴스 캐시에 카드가 %d개 있어 단일 카드 전제가 깨져 삭제하고 캐시 미스로 처리합니다.",
-            len(result.card_news),
-        )
-        await _delete_key(key)
-        return None
-
-    return result
+    _logger.warning(
+        "카드뉴스 캐시 키(%s)의 news_id(%s)가 조회 대상(%s)과 달라 "
+        "삭제하고 캐시 미스로 처리합니다.",
+        key,
+        result.news_id,
+        expected_news_id,
+    )
+    await _delete_key(key)
+    return None
 
 
 async def _delete_key(key: str) -> None:

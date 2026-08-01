@@ -35,7 +35,9 @@ class CardNewsItem(BaseModel):
 
 class CardNewsResult(BaseModel):
     news_id: str = Field(serialization_alias="newsId")
-    card_news: list[CardNewsItem] = Field(serialization_alias="cardNews")
+    card_news: list[CardNewsItem] = Field(
+        serialization_alias="cardNews", min_length=1, max_length=1
+    )
 
     model_config = {"populate_by_name": True}
 
