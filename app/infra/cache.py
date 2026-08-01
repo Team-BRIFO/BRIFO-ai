@@ -105,7 +105,7 @@ async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult 
         if raw is None:
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_single_card(result, key)
+        return await _validate_single_card(result, key, expected_news_id=news_id)
     except ValidationError:
         _logger.exception(
             "카드뉴스 요약 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -143,7 +143,7 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
         if raw is None:
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_single_card(result, key)
+        return await _validate_single_card(result, key, expected_news_id=news_id)
     except ValidationError:
         _logger.exception(
             "카드뉴스 최신 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -155,21 +155,34 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
         return None
 
 
-async def _validate_single_card(result: CardNewsResult, key: str) -> CardNewsResult | None:
+async def _validate_single_card(
+    result: CardNewsResult, key: str, *, expected_news_id: str
+) -> CardNewsResult | None:
     """
-    카드뉴스는 정확히 1개여야 한다는 전제(_resolve_news_card가 card_news[0]을 그대로 씀)를
-    캐시 읽기 경로에서도 강제한다. 이 전제가 도입되기 전에 저장된 다중 카드 캐시가 TTL 동안
-    남아있을 수 있어, 신규 생성 시 검증(_parse_card_news)만으로는 충분하지 않다.
+    캐시된 값이 (1) 조회하려던 news_id와 일치하고 (2) 카드가 정확히 1개인지를 검증한다.
+    _resolve_news_card()가 반환값의 card_news[0]을 그대로 다른 뉴스의 headline/points로
+    쓰기 때문에, 이 두 전제 중 하나라도 깨지면 엉뚱한 뉴스의 카드가 브리핑에 섞여 들어간다.
     """
-    if len(result.card_news) == 1:
-        return result
+    if result.news_id != expected_news_id:
+        _logger.warning(
+            "카드뉴스 캐시 키(%s)의 news_id(%s)가 조회 대상(%s)과 달라 "
+            "삭제하고 캐시 미스로 처리합니다.",
+            key,
+            result.news_id,
+            expected_news_id,
+        )
+        await _delete_key(key)
+        return None
 
-    _logger.warning(
-        "카드뉴스 캐시에 카드가 %d개 있어 단일 카드 전제가 깨져 삭제하고 캐시 미스로 처리합니다.",
-        len(result.card_news),
-    )
-    await _delete_key(key)
-    return None
+    if len(result.card_news) != 1:
+        _logger.warning(
+            "카드뉴스 캐시에 카드가 %d개 있어 단일 카드 전제가 깨져 삭제하고 캐시 미스로 처리합니다.",
+            len(result.card_news),
+        )
+        await _delete_key(key)
+        return None
+
+    return result
 
 
 async def _delete_key(key: str) -> None:
