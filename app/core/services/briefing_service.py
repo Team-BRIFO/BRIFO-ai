@@ -13,7 +13,13 @@ from zoneinfo import ZoneInfo
 
 from app.core.agents.briefing_api import generate_briefing, generate_personal_comment
 from app.exceptions import InvalidRequest
-from app.infra.cache import get_briefing, get_personal, set_briefing, set_personal
+from app.infra.cache import (
+    get_briefing,
+    get_latest_summary,
+    get_personal,
+    set_briefing,
+    set_personal,
+)
 from app.schemas.briefing import (
     AgentBriefing,
     AgentType,
@@ -51,10 +57,12 @@ async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult
     if not request.news_card:
         raise InvalidRequest("newsCard는 최소 1개 이상이어야 합니다.")
 
+    news_cards = await _resolve_news_cards(request.news_card)
+
     briefings = await asyncio.gather(
         *(
             _build_agent_briefing(
-                news_cards=request.news_card,
+                news_cards=news_cards,
                 agent_type=agent_type,
                 level_range=request.level_range,
                 user_id=request.user_id,
@@ -65,6 +73,24 @@ async def generate_briefings(request: BriefingGenerateRequest) -> BriefingResult
     )
 
     return BriefingResult(briefings=list(briefings))
+
+
+async def _resolve_news_cards(news_cards: list[NewsInput]) -> list[NewsInput]:
+    """
+    카드뉴스 요약 캐시(newsId 기준)에서 최신 headline/points를 조회해
+    요청으로 받은 news_cards를 캐시된 값으로 치환한다. 캐시 미스인 카드는 그대로 둔다.
+    """
+    resolved = await asyncio.gather(*(_resolve_news_card(card) for card in news_cards))
+    return list(resolved)
+
+
+async def _resolve_news_card(card: NewsInput) -> NewsInput:
+    cached = await get_latest_summary(card.news_id)
+    if cached is None or not cached.card_news:
+        return card
+
+    latest = cached.card_news[0]
+    return card.model_copy(update={"headline": latest.headline, "points": latest.points})
 
 
 def build_briefing_cache_id(news_cards: list[NewsInput]) -> str:
