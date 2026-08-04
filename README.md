@@ -44,10 +44,10 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 
 ## 👥 팀원 및 AI 역할 분담
 
-| 이름 | GitHub | 담당 역할 |
-| ---- | ------ | --------- |
-|      |        |           |
-|      |        |           |
+| 이름       | GitHub                                       | 담당 역할                                      |
+|----------|----------------------------------------------|--------------------------------------------|
+| 유니 / 정세윤 | [@yunnij](https://github.com/yunnij)         | 뉴스 요약 파이프라인 구축 및 비동기 멀티 에이전트 호출 구조 설계 |
+| 이브 / 곽해림 | [@Tulipurple](https://github.com/Tulipurple) | 멀티 페르소나 프롬프트 설계 및 LLM 라우팅·비용 최적화 |
 
 ---
 
@@ -59,7 +59,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 | AI 사원 브리핑 | `POST /ai/briefing/generate` | 루키·프로·탱커 3종을 병렬 호출해 사원별 분석 보고서 생성 |
 | 헬스 체크 | `GET /ai/health` | 서버 상태 확인 |
 
-- LLM은 **사원별 차등**으로 사용합니다: 루키 `Claude Haiku 4.5` · 탱커 `Claude Sonnet 4.6` · 프로 `Claude Opus 4.x`, 카드뉴스 요약·개인화는 `Gemini 3 Flash`. 라우팅은 **OpenRouter** 를 통합니다(primary/fallback 정책).
+- LLM은 **사원별 차등**으로 사용합니다: 루키 `Gemini 3.5 Flash` · 탱커 `GPT-5.3` · 프로 `Claude Sonnet 4.6`, 카드뉴스 요약·개인화는 `Gemini 3.5 Flash Lite`. 라우팅은 **OpenRouter** 를 통합니다(primary/fallback 정책).
 - 동일 입력(뉴스 × 사원타입 × 레벨대)은 Redis 캐싱으로 LLM 호출을 1회로 묶어 비용을 통제합니다.
 
 ---
@@ -124,5 +124,5 @@ uv run uvicorn app.main:app --reload
 ```
 
 - 실행 후 API 문서(Swagger UI): `http://localhost:8000/docs`
-- 배포는 `Dockerfile`로 컨테이너 빌드 후 GCP Cloud Run에 올립니다.
+- 배포는 `Dockerfile`로 컨테이너 빌드 후 AWS EC2에 올립니다.
 - LLM API 키(OpenRouter), Redis 접속 정보 등 민감 정보는 커밋 금지 — `.env`로 관리합니다.
