@@ -38,7 +38,7 @@ class BriefingGenerateRequest(BaseModel):
 class CommonBriefing(BaseModel):
     agent_type: AgentType = Field(serialization_alias="agentType")
     direction: Direction
-    confidence_rate: int = Field(serialization_alias="confidenceRate")
+    confidence_rate: int = Field(ge=0, le=100, serialization_alias="confidenceRate")
     headline: str
     summary: str
     content_text: str = Field(serialization_alias="contentText")
