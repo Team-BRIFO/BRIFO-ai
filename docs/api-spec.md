@@ -36,7 +36,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ## 1. 카드뉴스 요약 생성
  
-뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 리스트를 생성합니다. `news_id` 기준 24h 캐시 구현 예정.
+뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 1건을 생성합니다. `(newsId, excludeTerms)` 기준 24h Redis 캐시 적용.
  
 **`POST /ai/news/summarize`**
  
@@ -81,12 +81,14 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
 }
 ```
  
-- `keywords.length`는 `points.length`와 같아야 하며, `keywords`는 빈 배열 불가 (`CardNewsItem` validator에서 검증, 위반 시 `ValidationError` → `COMMON400`(400)으로 매핑)
+- `points.length`는 정확히 3, `keywords.length`는 `terms.length`와 같아야 하며 `keywords`는 빈 배열 불가 (`CardNewsItem` validator에서 검증)
+- `cardNews` 배열은 정확히 1개 원소만 허용 (`CardNewsResult`의 `min_length`/`max_length` 제약)
+- 위 제약을 위반하면 `ValidationError` → `InvalidLLMResponse`(`BRIEFING502`)로 매핑
 ---
  
 ## 2. 사원 브리핑 생성
  
-카드뉴스 1건에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다. 공통 분석은 `(newsId, agentType, levelRange)` 기준, 개인화 코멘트는 `(userId, briefingId)` 기준으로 각각 24h 캐시 구현 예정.
+카드뉴스 1건 이상(`newsCard`)에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다. 공통 분석은 `newsCard` 내용 해시 + `agentType` + `levelRange` 기준 24h 캐시, 개인화 코멘트는 `(userId, briefingId)` 기준 다음 정산 시각(15:30 KST)까지 캐시.
  
 **`POST /ai/briefing/generate`**
  
@@ -94,11 +96,14 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ```json
 {
-  "news": {
-    "newsId": "string",
-    "headline": "string",
-    "point": ["string"]
-  },
+  "newsCard": [
+    {
+      "cardId": "string",
+      "newsId": "string",
+      "headline": "string",
+      "points": ["string"]
+    }
+  ],
   "userId": "string",
   "agentTypes": ["ROOKIE", "TANKER", "PRO"],
   "levelRange": "string",
@@ -116,12 +121,14 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| news.newsId | string | ✅ | 카드뉴스 식별자 |
-| news.headline | string | ✅ | 카드뉴스 헤드라인 |
-| news.point | string[] | ✅ | 카드뉴스 핵심 포인트 |
+| newsCard | NewsCard[] | ✅ | 브리핑 대상 카드뉴스 목록 (1개 이상). 카드가 여러 장이면 공통된 흐름 하나로 종합 분석 |
+| newsCard[].cardId | string | ✅ | 카드뉴스 카드 식별자 |
+| newsCard[].newsId | string | ✅ | 원본 뉴스 식별자. 서버가 이 값으로 카드뉴스 요약 캐시를 조회해 최신 headline/points로 치환한 뒤 분석한다(캐시 미스 시 요청값 그대로 사용) |
+| newsCard[].headline | string | ✅ | 카드뉴스 헤드라인 |
+| newsCard[].points | string[] | ✅ | 카드뉴스 핵심 포인트 |
 | userId | string | ✅ | 요청 유저 식별자 |
-| agentTypes | `("ROOKIE"\|"TANKER"\|"PRO")[]` | ✅ | 요청할 사원 목록 |
-| levelRange | string | ✅ | 유저 레벨 구간 (예: `"1-3"`) |
+| agentTypes | `("ROOKIE"\|"TANKER"\|"PRO")[]` | ✅ | 요청할 사원 목록 (1개 이상) |
+| levelRange | string | ✅ | 유저 레벨 구간. `"1-3"` / `"4-6"` / `"7-10"` 중 하나만 허용 |
 | recentDecisions | RecentDecision[] | ✅ | 개인화 코멘트 생성용 최근 결정 이력. **Spring Boot가 조회해서 전달** — FastAPI가 DB에서 직접 조회하지 않음 (deprecated 방식) |
  
 `recentDecisions[].direction`: `"UP" \| "DOWN" \| "NEUTRAL"`
@@ -136,20 +143,18 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
   "code": "COMMON200",
   "message": "사원 브리핑 생성에 성공했습니다.",
   "result": {
-    "newsId": "string",
     "briefings": [
       {
         "agentType": "ROOKIE",
         "direction": "UP",
-        "probability": 0.0,
+        "confidenceRate": 72,
         "headline": "string",
         "summary": "string",
-        "commonAnalysis": "string",
-        "closingComment": "string",
+        "contentText": "string",
+        "oneLiner": "string",
         "modelName": "string",
         "cached": false,
-        "personalIntro": "string",
-        "personalOutro": "string",
+        "personalComment": "string",
         "personalCached": false
       }
     ]
@@ -161,12 +166,14 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
 |---|---|---|
 | agentType | `"ROOKIE"\|"TANKER"\|"PRO"` | 사원 유형 |
 | direction | `"UP"\|"DOWN"\|"NEUTRAL"` | 예측 방향 |
-| probability | float | 예측 확률 |
-| headline / summary / commonAnalysis / closingComment | string | 사원의 공통 분석 텍스트 |
-| modelName | string | 실제 응답 생성에 사용된 모델 |
+| confidenceRate | int (0~100) | direction 판단에 대한 확신도 (예상 수익률 아님) |
+| headline | string | 한 줄 결론 |
+| summary | string | 짧은 요약 (1~2문장, 60자 이내) |
+| contentText | string | 긴 분석 본문 (사원별 글자수 제한 상이) |
+| oneLiner | string | 사원 페르소나의 마지막 한마디 |
+| modelName | string | 실제 응답 생성에 사용된 모델 (primary 실패 시 fallback 모델명) |
 | cached | boolean | 공통 분석 캐시 히트 여부 |
-| personalIntro | string \| null | 개인화 도입부 코멘트 |
-| personalOutro | string \| null | 개인화 마무리 코멘트 |
+| personalComment | string \| null | 개인화 코멘트 (최근 결정 이력 기반 1~2문장) |
 | personalCached | boolean | 개인화 코멘트 캐시 히트 여부 |
 
 ---
