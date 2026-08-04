@@ -1,0 +1,26 @@
+# VCS / IDE
+.git
+.github
+.idea
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.*
+
+# Runtime artifacts
+logs/
+
+# Tests / docs (not needed in the runtime image)
+tests/
+docs/
+
+# Misc project/tooling files
+.coderabbit.yaml
+README.md
