@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 AgentType = Literal["ROOKIE", "TANKER", "PRO"]
 Direction = Literal["UP", "DOWN", "NEUTRAL"]
+LevelRange = Literal["1-3", "4-6", "7-10"]
 
 
 class NewsInput(BaseModel):
@@ -18,7 +19,7 @@ class NewsInput(BaseModel):
 class RecentDecision(BaseModel):
     stock_name: str = Field(alias="stockName")
     direction: Direction
-    confidence: int
+    confidence: int = Field(ge=1, le=5)
     is_correct: bool = Field(alias="isCorrect")
     actual_change: float = Field(alias="actualChange")
 
@@ -29,7 +30,7 @@ class BriefingGenerateRequest(BaseModel):
     news_card: list[NewsInput] = Field(alias="newsCard")
     user_id: str = Field(alias="userId")
     agent_types: list[AgentType] = Field(alias="agentTypes")
-    level_range: str = Field(alias="levelRange")
+    level_range: LevelRange = Field(alias="levelRange")
     recent_decisions: list[RecentDecision] = Field(alias="recentDecisions")
 
     model_config = {"populate_by_name": True}
