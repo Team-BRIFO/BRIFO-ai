@@ -88,7 +88,11 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ## 2. 사원 브리핑 생성
  
-카드뉴스 1건 이상(`newsCard`)에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다. 공통 분석은 `newsCard` 내용 해시 + `agentType` + `levelRange` 기준 24h 캐시, 개인화 코멘트는 `(userId, briefingId)` 기준 다음 정산 시각(15:30 KST)까지 캐시.
+카드뉴스 1건 이상(`newsCard`)에 대해 여러 AI 사원(ROOKIE/TANKER/PRO)의 분석 브리핑과, 유저별 개인화 코멘트를 함께 생성합니다.
+
+- 캐시 키는 요청 바디에 없는 서버 내부 파생값인 `cache_id`(정렬된 `newsCard` 배열을 직렬화해 만든 SHA256 해시)를 기준으로 합니다. `briefingId`는 `{cache_id}:{agentType}:{levelRange}` 형식입니다.
+- 공통 분석: `briefing:{cache_id}:{agentType}:{levelRange}` 키로 24h 캐시.
+- 개인화 코멘트: `briefing:personal:{userId}:{briefingId}` (= `briefing:personal:{userId}:{cache_id}:{agentType}:{levelRange}`) 키로 다음 정산 시각(15:30 KST)까지 캐시.
  
 **`POST /ai/briefing/generate`**
  
