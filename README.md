@@ -75,7 +75,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 | 설정 | `pydantic-settings` (환경 변수 관리) |
 | 캐시 | `Redis` |
 | 패키지 관리 | `uv` (`pyproject.toml`) |
-| 배포 | `Dockerfile` · `GCP Cloud Run` · `GitHub Actions` |
+| 배포 | `Dockerfile` · `AWS EC2` · `GitHub Actions` |
 
 ---
 
