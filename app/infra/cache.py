@@ -38,6 +38,11 @@ def _summary_key(news_id: str, exclude_terms: list[str]) -> str:
     return f"summary:{news_id}:{terms_hash}"
 
 
+# 카드뉴스 요약 최신본: summary:latest:{news_id} — exclude_terms 무관하게 조회 (브리핑 프롬프트 연동용)
+def _summary_latest_key(news_id: str) -> str:
+    return f"summary:latest:{news_id}"
+
+
 async def get_briefing(
     news_id: str, agent_type: str, level_range: str
 ) -> CommonBriefing | None:
@@ -99,7 +104,8 @@ async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult 
         raw = await client.get(key)
         if raw is None:
             return None
-        return CardNewsResult.model_validate_json(raw)
+        result = CardNewsResult.model_validate_json(raw)
+        return await _validate_news_id(result, key, expected_news_id=news_id)
     except ValidationError:
         _logger.exception(
             "카드뉴스 요약 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
@@ -116,13 +122,61 @@ async def set_summary(
 ) -> None:
     try:
         client = get_redis_client()
+        payload = value.model_dump_json()
         await client.set(
-            _summary_key(news_id, exclude_terms),
-            value.model_dump_json(),
-            ex=_TTL_SECONDS,
+            _summary_key(news_id, exclude_terms), payload, ex=_TTL_SECONDS
         )
+        await client.set(_summary_latest_key(news_id), payload, ex=_TTL_SECONDS)
     except Exception:
         _logger.exception("카드뉴스 요약 캐시 저장 실패, 캐시 없이 진행합니다.")
+
+
+async def get_latest_summary(news_id: str) -> CardNewsResult | None:
+    """
+    exclude_terms와 무관하게 news_id 기준으로 가장 최근에 생성된 카드뉴스 요약을 조회한다.
+    브리핑 프롬프트 생성 시 클라이언트가 보낸 headline/points 대신 사용한다.
+    """
+    key = _summary_latest_key(news_id)
+    try:
+        client = get_redis_client()
+        raw = await client.get(key)
+        if raw is None:
+            return None
+        result = CardNewsResult.model_validate_json(raw)
+        return await _validate_news_id(result, key, expected_news_id=news_id)
+    except ValidationError:
+        _logger.exception(
+            "카드뉴스 최신 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
+        )
+        await _delete_key(key)
+        return None
+    except Exception:
+        _logger.exception("카드뉴스 최신 캐시 조회 실패, 캐시 미스로 처리합니다.")
+        return None
+
+
+async def _validate_news_id(
+    result: CardNewsResult, key: str, *, expected_news_id: str
+) -> CardNewsResult | None:
+    """
+    캐시된 값의 news_id가 조회하려던 news_id와 일치하는지 검증한다.
+    _resolve_news_card()가 반환값의 card_news[0]을 그대로 그 뉴스의 headline/points로 쓰기
+    때문에, news_id가 어긋나면 엉뚱한 뉴스의 카드가 브리핑에 섞여 들어간다.
+    카드 개수(정확히 1개)는 CardNewsResult.card_news의 min_length/max_length 제약으로
+    model_validate_json() 단계에서 이미 강제되므로 여기서 별도로 검사하지 않는다.
+    """
+    if result.news_id == expected_news_id:
+        return result
+
+    _logger.warning(
+        "카드뉴스 캐시 키(%s)의 news_id(%s)가 조회 대상(%s)과 달라 "
+        "삭제하고 캐시 미스로 처리합니다.",
+        key,
+        result.news_id,
+        expected_news_id,
+    )
+    await _delete_key(key)
+    return None
 
 
 async def _delete_key(key: str) -> None:
