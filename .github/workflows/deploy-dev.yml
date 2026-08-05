@@ -64,7 +64,7 @@ jobs:
           fi
 
           # --timeout-seconds is only the delivery deadline; executionTimeout bounds
-          # how long deploy.sh itself may run before SSM kills it (default 3600s).
+          # how long ai-deploy.sh itself may run before SSM kills it (default 3600s).
           command_id="$(
             aws ssm send-command \
               --targets \

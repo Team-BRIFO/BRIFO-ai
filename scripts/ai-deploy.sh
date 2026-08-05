@@ -18,7 +18,7 @@ CONTAINER_PORT="8000"
 HEALTH_CHECK_TIMEOUT_SECONDS="60"
 REDIS_URL="redis://brifo-valkey:6379"
 
-IMAGE_TAG="${1:?Usage: deploy.sh <image-tag>}"
+IMAGE_TAG="${1:?Usage: ai-deploy.sh <image-tag>}"
 HEALTH_URL="http://127.0.0.1:${HOST_PORT}/ai/health"
 
 if [[ ! "${IMAGE_TAG}" =~ ^[0-9a-f]{40}$ ]]; then
