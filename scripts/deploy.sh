@@ -11,6 +11,7 @@ PARAMETER_PREFIX="/brifo/dev"
 
 CONTAINER_NAME="brifo-ai-server"
 OLD_CONTAINER_NAME="${CONTAINER_NAME}-old"
+OLD_CONTAINER_PRESERVED=false
 DOCKER_NETWORK="brifo-network"
 HOST_PORT="8000"
 CONTAINER_PORT="8000"
@@ -44,7 +45,7 @@ get_required_parameter() {
   echo "${value}"
 }
 
-run_container() (
+run_container() {
   local image="$1"
 
   AI_INTERNAL_API_KEY="$(get_required_parameter "AI_INTERNAL_API_KEY")" || return 1
@@ -55,11 +56,14 @@ run_container() (
     OPENROUTER_API_KEY \
     REDIS_URL
 
-  # Keep the current container as a fallback instead of removing it outright,
-  # so a failed health check below can still roll back to a working container.
-  docker stop --time 10 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-  docker rm "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
-  docker rename "${CONTAINER_NAME}" "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  # Only mark the old container as preserved once it has actually been stopped
+  # and renamed out of the way; rollback() must never touch it otherwise.
+  if docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
+    docker stop --time 10 "${CONTAINER_NAME}"
+    docker rm "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rename "${CONTAINER_NAME}" "${OLD_CONTAINER_NAME}"
+    OLD_CONTAINER_PRESERVED=true
+  fi
 
   docker run --detach \
     --name "${CONTAINER_NAME}" \
@@ -70,7 +74,7 @@ run_container() (
     --env OPENROUTER_API_KEY \
     --env REDIS_URL \
     "${image}"
-)
+}
 
 wait_for_health() {
   local started_at="${SECONDS}"
@@ -96,13 +100,15 @@ wait_for_health() {
 }
 
 rollback() {
+  if [[ "${OLD_CONTAINER_PRESERVED}" != "true" ]]; then
+    echo "Old container was never replaced; nothing to roll back." >&2
+    return
+  fi
+
   echo "Rolling back to the previous container..." >&2
   docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-
-  if docker container inspect "${OLD_CONTAINER_NAME}" >/dev/null 2>&1; then
-    docker rename "${OLD_CONTAINER_NAME}" "${CONTAINER_NAME}"
-    docker start "${CONTAINER_NAME}" >/dev/null
-  fi
+  docker rename "${OLD_CONTAINER_NAME}" "${CONTAINER_NAME}"
+  docker start "${CONTAINER_NAME}" >/dev/null
 }
 
 for command in aws docker curl; do
