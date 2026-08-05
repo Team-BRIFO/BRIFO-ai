@@ -10,6 +10,7 @@ ECR_REPOSITORY="brifo-fastapi-ecr"
 PARAMETER_PREFIX="/brifo/dev"
 
 CONTAINER_NAME="brifo-ai-server"
+OLD_CONTAINER_NAME="${CONTAINER_NAME}-old"
 DOCKER_NETWORK="brifo-network"
 HOST_PORT="8000"
 CONTAINER_PORT="8000"
@@ -54,8 +55,11 @@ run_container() (
     OPENROUTER_API_KEY \
     REDIS_URL
 
+  # Keep the current container as a fallback instead of removing it outright,
+  # so a failed health check below can still roll back to a working container.
   docker stop --time 10 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-  docker rm "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rm "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rename "${CONTAINER_NAME}" "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
 
   docker run --detach \
     --name "${CONTAINER_NAME}" \
@@ -89,6 +93,16 @@ wait_for_health() {
   done
 
   return 1
+}
+
+rollback() {
+  echo "Rolling back to the previous container..." >&2
+  docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+
+  if docker container inspect "${OLD_CONTAINER_NAME}" >/dev/null 2>&1; then
+    docker rename "${OLD_CONTAINER_NAME}" "${CONTAINER_NAME}"
+    docker start "${CONTAINER_NAME}" >/dev/null
+  fi
 }
 
 for command in aws docker curl; do
@@ -126,12 +140,16 @@ docker pull "${IMAGE}"
 
 if ! run_container "${IMAGE}" >/dev/null; then
   echo "Failed to start the new container." >&2
+  rollback
   exit 1
 fi
 
 if ! wait_for_health; then
   echo "Deployment failed: the new container is unhealthy." >&2
+  rollback
   exit 1
 fi
+
+docker rm --force "${OLD_CONTAINER_NAME}" >/dev/null 2>&1 || true
 
 echo "Deployment completed for image tag: ${IMAGE_TAG}"
