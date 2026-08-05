@@ -25,12 +25,22 @@ if [[ ! "${IMAGE_TAG}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 get_required_parameter() {
-  aws ssm get-parameter \
-    --name "${PARAMETER_PREFIX}/$1" \
-    --with-decryption \
-    --query "Parameter.Value" \
-    --output text \
-    --region "${AWS_REGION}"
+  local value
+  value="$(
+    aws ssm get-parameter \
+      --name "${PARAMETER_PREFIX}/$1" \
+      --with-decryption \
+      --query "Parameter.Value" \
+      --output text \
+      --region "${AWS_REGION}"
+  )" || return 1
+
+  if [[ -z "${value}" ]]; then
+    echo "Parameter is empty: ${PARAMETER_PREFIX}/$1" >&2
+    return 1
+  fi
+
+  echo "${value}"
 }
 
 run_container() (
