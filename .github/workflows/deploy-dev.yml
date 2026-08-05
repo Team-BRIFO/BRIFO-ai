@@ -63,12 +63,14 @@ jobs:
             exit 1
           fi
 
+          # --timeout-seconds is only the delivery deadline; executionTimeout bounds
+          # how long deploy.sh itself may run before SSM kills it (default 3600s).
           command_id="$(
             aws ssm send-command \
               --targets \
                 "Key=tag:aws:autoscaling:groupName,Values=${ASG_NAME}" \
               --document-name AWS-RunShellScript \
-              --parameters "commands=[\"${EC2_DEPLOY_SCRIPT_PATH} ${GITHUB_SHA}\"]" \
+              --parameters "commands=[\"${EC2_DEPLOY_SCRIPT_PATH} ${GITHUB_SHA}\"],executionTimeout=[\"420\"]" \
               --timeout-seconds 600 \
               --max-concurrency "100%" \
               --max-errors "0" \
