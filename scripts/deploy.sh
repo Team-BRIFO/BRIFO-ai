@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 
 AWS_REGION="ap-northeast-2"
-ECR_REPOSITORY="brifo-ai-ecr"
+ECR_REPOSITORY="brifo-fastapi-ecr"
 PARAMETER_PREFIX="/brifo/dev"
 
 CONTAINER_NAME="brifo-ai-server"
