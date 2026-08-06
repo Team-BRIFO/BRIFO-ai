@@ -7,40 +7,46 @@ BRIFO AI 서비스(FastAPI)의 디렉토리 구조 및 각 모듈의 역할을 �
 ## 디렉토리 트리
 
 ```
-app/
+.
 ├── .github/
 ├── docs/
-├── main.py
-├── api/
-│   ├── deps.py
-│   ├── health.py
-│   ├── briefing.py
-│   └── news.py
-
-├── schemas/
-│   ├── briefing.py
-│   └── news.py
-├── core/
-│   ├── agents/
-│   │   ├── agent_profiles.py
-│   │   ├── model_policy.py
-│   │   ├── prompt_builder.py
-│   │   └── llm_router.py
-│   └── services/
-│       ├── briefing_service.py
-│       └── summary_service.py
-
-├── infra/
-│   ├── http_client.py
-│   ├── openrouter_client.py
-│   ├── cache.py
-│   └── usage_tracker.py
-├── exceptions.py
-├── config/
-│   └── settings.py
+├── tests/
+├── logs/
+│   └── llm_usage.jsonl
+├── app/
+│   ├── main.py
+│   ├── api/
+│   │   ├── deps.py
+│   │   ├── health.py
+│   │   ├── briefing.py
+│   │   └── news.py
+│   ├── schemas/
+│   │   ├── briefing.py
+│   │   └── news.py
+│   ├── core/
+│   │   ├── agents/
+│   │   │   ├── agent_profiles.py
+│   │   │   ├── llm_router.py
+│   │   │   ├── prompt_builder.py
+│   │   │   ├── briefing_api.py
+│   │   │   └── llm_response.py
+│   │   └── services/
+│   │       ├── briefing_service.py
+│   │       └── summary_service.py
+│   ├── infra/
+│   │   ├── http_client.py
+│   │   ├── redis_client.py
+│   │   ├── openrouter_client.py
+│   │   ├── cache.py
+│   │   └── usage_tracker.py
+│   ├── exceptions.py
+│   └── config/
+│       └── settings.py
 ├── pyproject.toml
+├── uv.lock
 ├── .env
 ├── .gitignore
+├── .dockerignore
 └── Dockerfile
 ```
 
@@ -85,10 +91,11 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 
 | 파일 | 설명 |
 |------|------|
-| `agent_profiles.py` | ROOKIE, TANKER, PRO의 성향·분석 프레임·말투·`prompt_version` 관리 |
-| `model_policy.py` | primary/fallback 모델 정책 관리 |
-| `prompt_builder.py` | `agent_profiles` 설정을 기반으로 최종 프롬프트 생성 (고정 프롬프트 + 동적 입력) |
-| `llm_router.py` | `model_policy.py`의 정책표를 읽어 primary/fallback 모델을 반환 |
+| `agent_profiles.py` | ROOKIE, TANKER, PRO의 성향·분석 프레임·용도별 작성 규칙(`summary_rules`/`content_rules`/`one_liner_rules`)·레벨 효과 관리 |
+| `llm_router.py` | 브리핑(사원별)/개인화/카드뉴스 요약용 primary·fallback 모델 정책표 관리 및 선택 함수 제공 |
+| `prompt_builder.py` | `agent_profiles` 설정을 기반으로 브리핑·개인화 코멘트 최종 프롬프트 생성 |
+| `briefing_api.py` | 프롬프트 생성 → 모델 선택 → LLM 호출 → 응답 파싱·검증까지 브리핑/개인화 생성의 외부 연동 인터페이스 |
+| `llm_response.py` | LLM 응답에서 Markdown 코드펜스를 제거하는 등 응답 파싱 공용 헬퍼 |
 
 #### `core/services/` — Use-case 흐름
 
@@ -105,10 +112,11 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 
 | 파일 | 설명 |
 |------|------|
-| `http_client.py` | 공유 `httpx.AsyncClient` 관리 (lifespan에서 생성·종료) |
-| `openrouter_client.py` | OpenRouter API 호출 담당 |
-| `cache.py` | Redis 캐싱 담당 |
-| `usage_tracker.py` | LLM 사용량 및 성능 기록 담당 |
+| `http_client.py` | OpenRouter 전용 공유 `httpx.AsyncClient` 관리 (lifespan에서 생성·종료) |
+| `redis_client.py` | 공유 `redis.asyncio.Redis` 클라이언트 관리 (lifespan에서 생성·종료) |
+| `openrouter_client.py` | `http_client`의 공유 클라이언트로 OpenRouter LLM 호출, primary 실패 시 fallback 1회 재시도 |
+| `cache.py` | `redis_client`를 이용한 Redis 캐싱 담당 (공통 분석 24h, 카드뉴스 요약 24h, 개인화 코멘트는 다음 정산 시각까지) |
+| `usage_tracker.py` | LLM 사용량·비용·지연시간 등을 `logs/llm_usage.jsonl`에 기록 |
 
 ---
 
@@ -116,11 +124,13 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 
 | 파일/디렉토리 | 설명                                                                   |
 |--------------|----------------------------------------------------------------------|
-| `exceptions.py` | 공통 커스텀 예외 정의 (`LLMTimeout`, `RateLimitError`, `AllModelsFailed` 등)   |
-| `config/settings.py` | `pydantic-settings` 기반 환경변수 관리 (`OPENROUTER_API_KEY`, `REDIS_URL` 등) |
-| `pyproject.toml` | uv 기반 패키지 관리 설정                                                      |
+| `exceptions.py` | 공통 커스텀 예외 정의 (`LLMTimeout`, `RateLimit`, `AllModelsFailed`, `InvalidLLMResponse` 등)   |
+| `config/settings.py` | `pydantic-settings` 기반 환경변수 관리 (`AI_INTERNAL_API_KEY`, `OPENROUTER_API_KEY`, `REDIS_URL` 등) |
+| `pyproject.toml` / `uv.lock` | uv 기반 패키지 관리 설정 및 락파일                                                      |
 | `.env` | 환경변수 실제 값 (커밋 금지)                                                    |
-| `.gitignore` | Git 추적 제외 파일 설정                                                      |
-| `Dockerfile` | 배포용 컨테이너 빌드 설정                                         |
+| `.gitignore` / `.dockerignore` | Git / Docker 빌드 컨텍스트 추적 제외 파일 설정                                                      |
+| `Dockerfile` | 배포용 컨테이너 빌드 설정 (uv 기반 멀티스테이지 빌드, `PORT` 환경변수로 리스닝 포트 지정, 기본값 8000)                                         |
+| `logs/` | `usage_tracker.py`가 기록하는 LLM 사용량 로그(`llm_usage.jsonl`) 저장 위치                                                           |
+| `tests/` | 테스트 코드 모음                                                           |
 | `docs/` | 프로젝트 문서 모음                                                           |
 | `.github/` | GitHub PR, ISSUE 템플릿                                                 |
