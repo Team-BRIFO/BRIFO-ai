@@ -20,8 +20,17 @@ ROOT = Path(__file__).resolve().parent
 RESULT_DIR = ROOT / "results" / "agent_baseline"
 JUDGE_RESULT_DIR = ROOT / "results" / "agent_baseline_judge"
 
-_JUDGE_MODEL = "anthropic/claude-sonnet-5"
-_JUDGE_FALLBACK = "openai/gpt-5.3-chat"
+# 실제 생성 모델(briefing["modelName"])을 제외하고 남은 후보 중에서 primary/fallback을 고른다.
+_JUDGE_POOL = (
+    "anthropic/claude-sonnet-5",
+    "openai/gpt-5.3-chat",
+    "anthropic/claude-haiku-4.5",
+)
+
+
+def _select_judge_models(generation_model: str) -> tuple[str, str]:
+    candidates = [m for m in _JUDGE_POOL if m != generation_model]
+    return candidates[0], candidates[1]
 
 
 def _build_judge_prompt(news_cards: list[dict], briefing: dict) -> str:
@@ -67,16 +76,18 @@ async def judge_case(path: Path) -> list[dict]:
     verdicts = []
     for briefing in data["briefings"]:
         prompt = _build_judge_prompt(data["newsCards"], briefing)
+        judge_model, judge_fallback = _select_judge_models(briefing["modelName"])
         llm_response = await call_llm(
             prompt,
-            _JUDGE_MODEL,
-            _JUDGE_FALLBACK,
+            judge_model,
+            judge_fallback,
             agent_type="JUDGE",
             task_type="briefing_content_judge",
         )
         verdict = json.loads(llm_response["content"])
         verdict["caseId"] = data["caseId"]
         verdict["agentType"] = briefing["agentType"]
+        verdict["generationModel"] = briefing["modelName"]
         verdict["judgeModel"] = llm_response["model"]
         verdicts.append(verdict)
 
