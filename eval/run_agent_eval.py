@@ -34,6 +34,7 @@ def load_news_cards(case_id: str) -> list[NewsInput]:
     return [
         NewsInput(
             cardId=f"{case_id}-{index}",
+            newsId=f"{case_id}-{index}",
             headline=card["headline"],
             points=card["points"],
         )
