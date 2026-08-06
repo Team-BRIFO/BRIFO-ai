@@ -9,7 +9,7 @@ from app.core.agents.llm_router import select_summary_model
 from app.core.services.summary_service import _build_prompt, _parse_card_news
 from app.infra.http_client import close_openrouter_client, init_openrouter_client
 from app.infra.openrouter_client import call_llm
-from app.schemas.news import CardNewsGenerateRequest
+from app.schemas.news import CardNewsGenerateRequest, CardNewsResult
 
 
 ROOT = Path(__file__).resolve().parent
@@ -53,6 +53,7 @@ async def run_case(path: Path) -> None:
         task_type="news_summary_eval",
     )
     parsed = _parse_card_news(llm_response)
+    validated = CardNewsResult(news_id=path.stem, card_news=parsed)
     result = {
         "caseId": path.stem,
         "stockName": stock_name,
@@ -60,7 +61,7 @@ async def run_case(path: Path) -> None:
         "fallbackModel": fallback,
         "usedModel": llm_response["model"],
         "fallbackUsed": llm_response["fallback_used"],
-        "cardNews": [item.model_dump(mode="json") for item in parsed],
+        "cardNews": [item.model_dump(mode="json") for item in validated.card_news],
     }
     output_path = RESULT_DIR / f"{path.stem}.json"
     output_path.write_text(
