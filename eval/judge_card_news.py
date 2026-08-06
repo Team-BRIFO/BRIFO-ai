@@ -89,6 +89,11 @@ async def judge_case(path: Path) -> dict:
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     data = CardNewsJudgeInput.model_validate(raw)
+    if data.caseId != path.stem:
+        raise ValueError(
+            f"파일명({path.stem})과 내용의 caseId({data.caseId})가 다르다 — "
+            "잘못된 원문과 짝지어 채점하는 걸 방지하기 위해 중단한다."
+        )
     prompt = _build_judge_prompt(article_title, article_body, data.cardNews)
 
     llm_response = await call_llm(
@@ -99,6 +104,18 @@ async def judge_case(path: Path) -> dict:
         task_type="card_news_content_judge",
     )
     parsed = CardNewsJudgeVerdict.model_validate(json.loads(llm_response["content"]))
+
+    # 카드가 항상 1개라(CardNewsResult가 강제) point index에 카드 구분자 필요없음
+    expected_indices = set(range(1, len(data.cardNews[0].points) + 1))
+    actual_indices = {p.index for p in parsed.points}
+    if actual_indices != expected_indices or len(parsed.points) != len(
+        expected_indices
+    ):
+        raise ValueError(
+            f"{path.stem}: 심판 응답의 point index가 실제 point와 다르다. "
+            f"기대={sorted(expected_indices)}, 실제={[p.index for p in parsed.points]}"
+        )
+
     verdict = parsed.model_dump()
     verdict["caseId"] = path.stem
     verdict["judgeModel"] = llm_response["model"]
@@ -115,10 +132,14 @@ def _summarize(verdict: dict) -> str:
     fails = [
         p
         for p in verdict["points"]
-        if not (p["factsAccurate"] and p["uncertaintyPreserved"] and p["factCoverageOk"])
+        if not (
+            p["factsAccurate"] and p["uncertaintyPreserved"] and p["factCoverageOk"]
+        )
     ]
     status = "FAIL" if fails else "ok"
-    lines = [f"[{status}] {verdict['caseId']}: {total - len(fails)}/{total} points clean"]
+    lines = [
+        f"[{status}] {verdict['caseId']}: {total - len(fails)}/{total} points clean"
+    ]
     for p in fails:
         lines.append(f"    point {p['index']}: {p['issue']}")
     return "\n".join(lines)
