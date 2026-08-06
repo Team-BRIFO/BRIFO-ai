@@ -13,6 +13,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from app.infra.http_client import close_openrouter_client, init_openrouter_client
 from app.infra.openrouter_client import call_llm
 from eval.run_card_news_eval import parse_source
@@ -26,10 +28,39 @@ _JUDGE_MODEL = "anthropic/claude-sonnet-5"
 _JUDGE_FALLBACK = "openai/gpt-5.3-chat"
 
 
-def _build_judge_prompt(article_title: str, article_body: str, card_news: list[dict]) -> str:
+class CardNewsIn(BaseModel):
+    headline: str
+    points: list[str]
+
+
+class CardNewsJudgeInput(BaseModel):
+    """eval/results/card_news_baseline/*.json 하나(케이스 1개)의 필수 필드."""
+
+    caseId: str
+    cardNews: list[CardNewsIn]
+
+
+class CardNewsPointVerdict(BaseModel):
+    index: int
+    factsAccurate: bool
+    uncertaintyPreserved: bool
+    factCoverageOk: bool
+    issue: str
+
+
+class CardNewsJudgeVerdict(BaseModel):
+    """심판 LLM이 반환해야 하는 JSON 형태. 필드 누락·타입 불일치를 여기서 막는다."""
+
+    points: list[CardNewsPointVerdict]
+    overallNote: str
+
+
+def _build_judge_prompt(
+    article_title: str, article_body: str, card_news: list[CardNewsIn]
+) -> str:
     cards_text = "\n\n".join(
-        f"[카드 {i}] headline: {c['headline']}\n"
-        + "\n".join(f"  - point {j}: {p}" for j, p in enumerate(c["points"], 1))
+        f"[카드 {i}] headline: {c.headline}\n"
+        + "\n".join(f"  - point {j}: {p}" for j, p in enumerate(c.points, 1))
         for i, c in enumerate(card_news, 1)
     )
     return (
@@ -54,12 +85,11 @@ def _build_judge_prompt(article_title: str, article_body: str, card_news: list[d
 
 
 async def judge_case(path: Path) -> dict:
-    article_title, article_body = "", ""
-    md_path = SOURCE_DIR / f"{path.stem}.md"
-    _, article_title, article_body = parse_source(md_path)
+    _, article_title, article_body = parse_source(SOURCE_DIR / f"{path.stem}.md")
 
-    data = json.loads(path.read_text(encoding="utf-8"))
-    prompt = _build_judge_prompt(article_title, article_body, data["cardNews"])
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    data = CardNewsJudgeInput.model_validate(raw)
+    prompt = _build_judge_prompt(article_title, article_body, data.cardNews)
 
     llm_response = await call_llm(
         prompt,
@@ -68,7 +98,8 @@ async def judge_case(path: Path) -> dict:
         agent_type="JUDGE",
         task_type="card_news_content_judge",
     )
-    verdict = json.loads(llm_response["content"])
+    parsed = CardNewsJudgeVerdict.model_validate(json.loads(llm_response["content"]))
+    verdict = parsed.model_dump()
     verdict["caseId"] = path.stem
     verdict["judgeModel"] = llm_response["model"]
 

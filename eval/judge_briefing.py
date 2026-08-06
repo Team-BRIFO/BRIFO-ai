@@ -13,6 +13,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from app.infra.http_client import close_openrouter_client, init_openrouter_client
 from app.infra.openrouter_client import call_llm
 
@@ -28,28 +30,62 @@ _JUDGE_POOL = (
 )
 
 
+class NewsCardIn(BaseModel):
+    headline: str
+    points: list[str]
+
+
+class BriefingIn(BaseModel):
+    agentType: str
+    direction: str
+    confidenceRate: int
+    headline: str
+    summary: str
+    contentText: str
+    oneLiner: str
+    modelName: str
+
+
+class BriefingJudgeInput(BaseModel):
+    """eval/results/agent_baseline/*.json 하나(케이스 1개)의 필수 필드."""
+
+    caseId: str
+    newsCards: list[NewsCardIn]
+    briefings: list[BriefingIn]
+
+
+class BriefingJudgeVerdict(BaseModel):
+    """심판 LLM이 반환해야 하는 JSON 형태. 필드 누락·타입 불일치를 여기서 막는다."""
+
+    factsAccurate: bool
+    hasGroundedBackground: bool
+    isSynthesized: bool
+    isConsistent: bool
+    issues: list[str]
+
+
 def _select_judge_models(generation_model: str) -> tuple[str, str]:
     candidates = [m for m in _JUDGE_POOL if m != generation_model]
     return candidates[0], candidates[1]
 
 
-def _build_judge_prompt(news_cards: list[dict], briefing: dict) -> str:
+def _build_judge_prompt(news_cards: list[NewsCardIn], briefing: BriefingIn) -> str:
     cards_text = "\n\n".join(
-        f"[카드 {i}] {c['headline']}\n" + "\n".join(f"  - {p}" for p in c["points"])
+        f"[카드 {i}] {c.headline}\n" + "\n".join(f"  - {p}" for p in c.points)
         for i, c in enumerate(news_cards, 1)
     )
     return (
         "너는 주가 브리핑의 품질을 검수하는 심사자다. "
         "아래 카드뉴스 원본과, 그것을 종합해 작성된 브리핑을 비교해 채점하라.\n\n"
-        f"# 브리핑 작성 페르소나\n{briefing['agentType']}\n\n"
+        f"# 브리핑 작성 페르소나\n{briefing.agentType}\n\n"
         f"# 카드뉴스 원본\n{cards_text}\n\n"
         f"# 생성된 브리핑\n"
-        f"headline: {briefing['headline']}\n"
-        f"summary: {briefing['summary']}\n"
-        f"contentText: {briefing['contentText']}\n"
-        f"oneLiner: {briefing['oneLiner']}\n"
-        f"direction: {briefing['direction']}\n"
-        f"confidenceRate: {briefing['confidenceRate']}\n\n"
+        f"headline: {briefing.headline}\n"
+        f"summary: {briefing.summary}\n"
+        f"contentText: {briefing.contentText}\n"
+        f"oneLiner: {briefing.oneLiner}\n"
+        f"direction: {briefing.direction}\n"
+        f"confidenceRate: {briefing.confidenceRate}\n\n"
         "다음 4개 항목을 판정한다:\n"
         "- factsAccurate: headline/summary/contentText/oneLiner에 나오는 수치·사실이 카드뉴스 원본과 "
         "정확히 일치하면 true. 카드뉴스에 없는 수치를 지어냈거나, 있는 수치를 다른 대상(예: 전사 실적을 "
@@ -72,11 +108,13 @@ def _build_judge_prompt(news_cards: list[dict], briefing: dict) -> str:
 
 
 async def judge_case(path: Path) -> list[dict]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    data = BriefingJudgeInput.model_validate(raw)
+
     verdicts = []
-    for briefing in data["briefings"]:
-        prompt = _build_judge_prompt(data["newsCards"], briefing)
-        judge_model, judge_fallback = _select_judge_models(briefing["modelName"])
+    for briefing in data.briefings:
+        prompt = _build_judge_prompt(data.newsCards, briefing)
+        judge_model, judge_fallback = _select_judge_models(briefing.modelName)
         llm_response = await call_llm(
             prompt,
             judge_model,
@@ -84,10 +122,11 @@ async def judge_case(path: Path) -> list[dict]:
             agent_type="JUDGE",
             task_type="briefing_content_judge",
         )
-        verdict = json.loads(llm_response["content"])
-        verdict["caseId"] = data["caseId"]
-        verdict["agentType"] = briefing["agentType"]
-        verdict["generationModel"] = briefing["modelName"]
+        parsed = BriefingJudgeVerdict.model_validate(json.loads(llm_response["content"]))
+        verdict = parsed.model_dump()
+        verdict["caseId"] = data.caseId
+        verdict["agentType"] = briefing.agentType
+        verdict["generationModel"] = briefing.modelName
         verdict["judgeModel"] = llm_response["model"]
         verdicts.append(verdict)
 
