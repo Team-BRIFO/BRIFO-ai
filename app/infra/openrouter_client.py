@@ -18,6 +18,10 @@ from app.infra.usage_tracker import record_usage
 _COMPLETIONS_PATH = "/chat/completions"
 _logger = logging.getLogger(__name__)
 
+# contentText 최대 400자(TANKER 기준) + 나머지 필드를 감안해 여유 있게 설정한 출력 토큰 상한
+# 이 값에 걸려 응답이 잘리면 finish_reason="length"로 감지해 fallback으로 재시도한다
+_MAX_OUTPUT_TOKENS = 2048
+
 
 async def call_llm(
     prompt: str,
@@ -113,6 +117,7 @@ async def _try_model(
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": _MAX_OUTPUT_TOKENS,
     }
     if require_json:
         payload["response_format"] = {"type": "json_object"}
@@ -134,6 +139,8 @@ async def _try_model(
 
     if choice.get("finish_reason") == "error":
         raise ValueError(f"'{model}' 생성이 실패했습니다 (finish_reason=error).")
+    if choice.get("finish_reason") == "length":
+        raise ValueError(f"'{model}' 응답이 최대 토큰 길이에 도달해 잘렸습니다 (finish_reason=length).")
 
     message = choice.get("message")
     if not isinstance(message, dict):
