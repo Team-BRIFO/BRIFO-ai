@@ -73,8 +73,14 @@ async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> No
     """
     호출은 성공했으나 파싱/검증에 실패했을 때
     실패 이벤트만 별도로 남긴다
-    토큰은 2배로 집계되지 않도록 0으로 기록한다 
+    토큰은 2배로 집계되지 않도록 0으로 기록한다
     """
+    _logger.error(
+        "LLM 응답 파싱 실패 - agent_type=%s model=%s content=%r",
+        agent_type,
+        llm_response.get("model", "unknown"),
+        llm_response.get("content"),
+    )
     try:
         await record_usage(
             model_name=llm_response.get("model", "unknown"),
