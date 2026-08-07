@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.core.agents.llm_router import select_summary_model
 from app.infra.http_client import close_openrouter_client, init_openrouter_client
 from app.infra.openrouter_client import call_llm
 from eval.run_card_news_eval import parse_source
@@ -31,9 +32,25 @@ _JUDGE_POOL = (
     "anthropic/claude-haiku-4.5",
 )
 
+_KNOWN_GENERATION_MODELS = frozenset(_JUDGE_POOL) | frozenset(select_summary_model())
+
 
 def _select_judge_models(generation_model: str) -> tuple[str, str]:
+    """
+    generation_model을 제외한 _JUDGE_POOL 후보 중에서 심판 primary/fallback을 고른다.
+    """
+    if generation_model not in _KNOWN_GENERATION_MODELS:
+        raise ValueError(
+            f"알 수 없는 생성 모델 '{generation_model}'입니다. "
+            "_JUDGE_POOL·_KNOWN_GENERATION_MODELS를 갱신해야 심판 선택이 안전합니다."
+        )
+
     candidates = [m for m in _JUDGE_POOL if m != generation_model]
+    if len(candidates) < 2:
+        raise ValueError(
+            f"'{generation_model}' 제외 후 남은 심판 후보가 {len(candidates)}개뿐입니다 "
+            "(최소 2개 필요, primary/fallback)."
+        )
     return candidates[0], candidates[1]
 
 
