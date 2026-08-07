@@ -15,6 +15,7 @@ from unittest.mock import patch
 from scripts.summarize_ai_metrics import (
     EVAL_TASK_TYPES,
     _model_contributions,
+    _parse_timestamp,
     _print_cache,
     _print_stability,
     _percentile,
@@ -24,7 +25,6 @@ from scripts.summarize_ai_metrics import (
 
 class PercentileTests(unittest.TestCase):
     def test_p50_uses_nearest_rank_for_two_values(self):
-        # 통계적 중앙값 (10+20)/2=15와는 다른 값이며, 의도된 동작이다
         self.assertEqual(_percentile([10, 20], 0.50), 10)
 
     def test_p50_of_three_values_matches_middle_value(self):
@@ -36,6 +36,20 @@ class PercentileTests(unittest.TestCase):
     def test_p95_of_ordered_values(self):
         values = list(range(1, 28))  # 1..27
         self.assertEqual(_percentile(values, 0.95), 26)
+
+
+class ParseTimestampTests(unittest.TestCase):
+    def test_z_suffix_and_utc_offset_parse_to_the_same_instant(self):
+        self.assertEqual(
+            _parse_timestamp("2026-08-07T00:00:00Z"),
+            _parse_timestamp("2026-08-07T00:00:00+00:00"),
+        )
+
+    def test_naive_timestamp_is_treated_as_utc(self):
+        self.assertEqual(
+            _parse_timestamp("2026-08-07T00:00:00"),
+            _parse_timestamp("2026-08-07T00:00:00+00:00"),
+        )
 
 
 class ModelContributionsTests(unittest.TestCase):
@@ -81,8 +95,6 @@ class ModelContributionsTests(unittest.TestCase):
         self.assertAlmostEqual(by_model["gpt"]["cost"], 0.02)
         self.assertEqual(by_model["gpt"]["status"], "success")
 
-        # latency_ms(2000)는 primary 실패 시간까지 포함된 전체 소요시간이라
-        # fallback 모델(gpt) 혼자만의 속도가 아니므로, 모델별 latency 집계에서 제외되어야 한다
         self.assertIsNone(by_model["claude"]["latency_ms"])
         self.assertIsNone(by_model["gpt"]["latency_ms"])
 
@@ -173,6 +185,40 @@ class EvalTrafficExclusionTests(unittest.TestCase):
             main()
 
         self.assertIn("논리 요청 수: 2", buf.getvalue())
+
+    def test_since_treats_z_suffix_and_utc_offset_as_the_same_instant(self):
+        event = self._base_event("briefing")
+        event["timestamp"] = "2026-08-07T00:00:00+00:00"
+        path = self._write_log([event])
+
+        buf = io.StringIO()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["summarize_ai_metrics.py", "--input", str(path), "--since", "2026-08-07T00:00:00Z"],
+            ),
+            redirect_stdout(buf),
+        ):
+            main()
+
+        self.assertIn("논리 요청 수: 1", buf.getvalue())
+
+    def test_since_rejects_unparseable_value(self):
+        path = self._write_log([self._base_event("briefing")])
+
+        buf = io.StringIO()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["summarize_ai_metrics.py", "--input", str(path), "--since", "not-a-timestamp"],
+            ),
+            redirect_stdout(buf),
+        ):
+            main()
+
+        self.assertNotIn("논리 요청 수", buf.getvalue())
 
 
 class CacheHitRateSeparationTests(unittest.TestCase):

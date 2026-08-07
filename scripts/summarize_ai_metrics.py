@@ -14,6 +14,7 @@ import math
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,18 @@ def _load_events(path: Path) -> list[dict[str, Any]]:
     if skipped:
         print(f"경고: 손상된 로그 줄 {skipped}개를 건너뛰었습니다.", file=sys.stderr)
     return events
+
+
+def _parse_timestamp(value: str) -> datetime:
+    """
+    ISO8601 타임스탬프를 datetime으로 파싱한다. tzinfo가 없으면 UTC로 간주한다.
+    문자열 그대로 사전식 비교하면 "Z"·"+09:00" 등 표기가 섞였을 때 틀리게 비교되므로,
+    --since 필터링은 반드시 이 함수로 파싱한 datetime끼리 비교해야 한다.
+    """
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _percentile(values: list[float], pct: float) -> float:
@@ -371,9 +384,31 @@ def main() -> None:
         print(f"로그 파일이 없습니다: {args.input}")
         return
 
-    events = _load_events(args.input)
+    since_dt = None
     if args.since:
-        events = [e for e in events if e.get("timestamp", "") >= args.since]
+        try:
+            since_dt = _parse_timestamp(args.since)
+        except ValueError:
+            print(
+                f"--since 값을 파싱할 수 없습니다: {args.since!r} (ISO8601 형식이어야 함)",
+                file=sys.stderr,
+            )
+            return
+
+    events = _load_events(args.input)
+    if since_dt is not None:
+        filtered_events = []
+        for e in events:
+            timestamp = e.get("timestamp")
+            if not timestamp:
+                continue
+            try:
+                event_dt = _parse_timestamp(timestamp)
+            except ValueError:
+                continue
+            if event_dt >= since_dt:
+                filtered_events.append(e)
+        events = filtered_events
     if not args.include_eval:
         events = [e for e in events if e.get("task_type") not in EVAL_TASK_TYPES]
     llm_events = [e for e in events if e["event_type"] == "llm_request"]
