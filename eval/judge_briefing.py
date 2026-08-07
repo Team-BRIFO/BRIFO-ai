@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent
 RESULT_DIR = ROOT / "results" / "agent_baseline"
 JUDGE_RESULT_DIR = ROOT / "results" / "agent_baseline_judge"
 
-# 실제 생성 모델(briefing["modelName"])을 제외하고 남은 후보 중에서 primary/fallback을 고른다.
+# 실제 생성 모델을 제외하고 남은 후보 중에서 primary/fallback을 고른다.
 _JUDGE_POOL = (
     "anthropic/claude-sonnet-5",
     "openai/gpt-5.3-chat",
@@ -122,7 +122,9 @@ async def judge_case(path: Path) -> list[dict]:
             agent_type="JUDGE",
             task_type="briefing_content_judge",
         )
-        parsed = BriefingJudgeVerdict.model_validate(json.loads(llm_response["content"]))
+        parsed = BriefingJudgeVerdict.model_validate(
+            json.loads(llm_response["content"])
+        )
         verdict = parsed.model_dump()
         verdict["caseId"] = data.caseId
         verdict["agentType"] = briefing.agentType
@@ -153,18 +155,26 @@ def _summarize(verdict: dict) -> str:
     return "\n".join(lines)
 
 
+def _select_paths(case: str | None, level: str) -> list[Path]:
+    """
+    --case가 있으면 그 케이스의 해당 level 결과 파일 하나만 고른다.
+    --case가 없으면 level에 맞는 파일들만 고른다:
+    """
+    suffix = "" if level == "1-3" else f"__level_{level}"
+    if case:
+        return [RESULT_DIR / f"{case}{suffix}.json"]
+    if level == "1-3":
+        return sorted(p for p in RESULT_DIR.glob("*.json") if "__level_" not in p.stem)
+    return sorted(RESULT_DIR.glob(f"*{suffix}.json"))
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case")
     parser.add_argument("--level", choices=("1-3", "4-6", "7-10"), default="1-3")
     args = parser.parse_args()
 
-    suffix = "" if args.level == "1-3" else f"__level_{args.level}"
-    paths = (
-        [RESULT_DIR / f"{args.case}{suffix}.json"]
-        if args.case
-        else sorted(RESULT_DIR.glob("*.json"))
-    )
+    paths = _select_paths(args.case, args.level)
 
     JUDGE_RESULT_DIR.mkdir(parents=True, exist_ok=True)
     init_openrouter_client()

@@ -24,8 +24,17 @@ SOURCE_DIR = ROOT / "news_sources"
 RESULT_DIR = ROOT / "results" / "card_news_baseline"
 JUDGE_RESULT_DIR = ROOT / "results" / "card_news_judge"
 
-_JUDGE_MODEL = "anthropic/claude-sonnet-5"
-_JUDGE_FALLBACK = "openai/gpt-5.3-chat"
+# 실제 생성 모델을 제외하고 남은 후보 중에서 primary/fallback을 고른다.
+_JUDGE_POOL = (
+    "anthropic/claude-sonnet-5",
+    "openai/gpt-5.3-chat",
+    "anthropic/claude-haiku-4.5",
+)
+
+
+def _select_judge_models(generation_model: str) -> tuple[str, str]:
+    candidates = [m for m in _JUDGE_POOL if m != generation_model]
+    return candidates[0], candidates[1]
 
 
 class CardNewsIn(BaseModel):
@@ -37,6 +46,7 @@ class CardNewsJudgeInput(BaseModel):
     """eval/results/card_news_baseline/*.json 하나(케이스 1개)의 필수 필드."""
 
     caseId: str
+    usedModel: str
     cardNews: list[CardNewsIn]
 
 
@@ -95,11 +105,12 @@ async def judge_case(path: Path) -> dict:
             "잘못된 원문과 짝지어 채점하는 걸 방지하기 위해 중단한다."
         )
     prompt = _build_judge_prompt(article_title, article_body, data.cardNews)
+    judge_model, judge_fallback = _select_judge_models(data.usedModel)
 
     llm_response = await call_llm(
         prompt,
-        _JUDGE_MODEL,
-        _JUDGE_FALLBACK,
+        judge_model,
+        judge_fallback,
         agent_type="JUDGE",
         task_type="card_news_content_judge",
     )
@@ -118,6 +129,7 @@ async def judge_case(path: Path) -> dict:
 
     verdict = parsed.model_dump()
     verdict["caseId"] = path.stem
+    verdict["generationModel"] = data.usedModel
     verdict["judgeModel"] = llm_response["model"]
 
     output_path = JUDGE_RESULT_DIR / f"{path.stem}.json"

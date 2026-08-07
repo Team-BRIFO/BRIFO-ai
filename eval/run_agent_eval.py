@@ -51,7 +51,9 @@ async def run_case(
     results = []
     for agent_type in agent_types:
         primary, fallback = select_briefing_model(agent_type)
-        briefing = await generate_briefing(news_cards, agent_type, level_range)
+        briefing = await generate_briefing(
+            news_cards, agent_type, level_range, task_type="briefing_eval"
+        )
         result = briefing.model_dump(by_alias=True, mode="json")
         result["primaryModel"] = primary
         result["fallbackModel"] = fallback
