@@ -122,6 +122,7 @@ async def _record_parse_failure(llm_response: dict) -> None:
     """
     try:
         await record_usage(
+            event_type="llm_validation_error",
             model_name=llm_response.get("model", "unknown"),
             agent_type="SUMMARY",
             task_type="news_summary",

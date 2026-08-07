@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.core.agents.llm_router import select_summary_model
 from app.infra.http_client import close_openrouter_client, init_openrouter_client
 from app.infra.openrouter_client import call_llm
 from eval.run_card_news_eval import parse_source
@@ -24,8 +25,33 @@ SOURCE_DIR = ROOT / "news_sources"
 RESULT_DIR = ROOT / "results" / "card_news_baseline"
 JUDGE_RESULT_DIR = ROOT / "results" / "card_news_judge"
 
-_JUDGE_MODEL = "anthropic/claude-sonnet-5"
-_JUDGE_FALLBACK = "openai/gpt-5.3-chat"
+# 실제 생성 모델을 제외하고 남은 후보 중에서 primary/fallback을 고른다.
+_JUDGE_POOL = (
+    "anthropic/claude-sonnet-5",
+    "openai/gpt-5.3-chat",
+    "anthropic/claude-haiku-4.5",
+)
+
+_KNOWN_GENERATION_MODELS = frozenset(_JUDGE_POOL) | frozenset(select_summary_model())
+
+
+def _select_judge_models(generation_model: str) -> tuple[str, str]:
+    """
+    generation_model을 제외한 _JUDGE_POOL 후보 중에서 심판 primary/fallback을 고른다.
+    """
+    if generation_model not in _KNOWN_GENERATION_MODELS:
+        raise ValueError(
+            f"알 수 없는 생성 모델 '{generation_model}'입니다. "
+            "_JUDGE_POOL·_KNOWN_GENERATION_MODELS를 갱신해야 심판 선택이 안전합니다."
+        )
+
+    candidates = [m for m in _JUDGE_POOL if m != generation_model]
+    if len(candidates) < 2:
+        raise ValueError(
+            f"'{generation_model}' 제외 후 남은 심판 후보가 {len(candidates)}개뿐입니다 "
+            "(최소 2개 필요, primary/fallback)."
+        )
+    return candidates[0], candidates[1]
 
 
 class CardNewsIn(BaseModel):
@@ -37,6 +63,7 @@ class CardNewsJudgeInput(BaseModel):
     """eval/results/card_news_baseline/*.json 하나(케이스 1개)의 필수 필드."""
 
     caseId: str
+    usedModel: str
     cardNews: list[CardNewsIn]
 
 
@@ -95,11 +122,12 @@ async def judge_case(path: Path) -> dict:
             "잘못된 원문과 짝지어 채점하는 걸 방지하기 위해 중단한다."
         )
     prompt = _build_judge_prompt(article_title, article_body, data.cardNews)
+    judge_model, judge_fallback = _select_judge_models(data.usedModel)
 
     llm_response = await call_llm(
         prompt,
-        _JUDGE_MODEL,
-        _JUDGE_FALLBACK,
+        judge_model,
+        judge_fallback,
         agent_type="JUDGE",
         task_type="card_news_content_judge",
     )
@@ -118,6 +146,7 @@ async def judge_case(path: Path) -> dict:
 
     verdict = parsed.model_dump()
     verdict["caseId"] = path.stem
+    verdict["generationModel"] = data.usedModel
     verdict["judgeModel"] = llm_response["model"]
 
     output_path = JUDGE_RESULT_DIR / f"{path.stem}.json"

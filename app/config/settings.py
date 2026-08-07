@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
-    # Redis
+    # Valkey (redis_url/REDIS_URL 이름은 redis-py 클라이언트 호환을 위해 유지)
     redis_url: str
 
 

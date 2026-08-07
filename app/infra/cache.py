@@ -1,5 +1,5 @@
 """
-Redis 캐싱
+Valkey 캐싱
 공통 분석 - TTL 24h
 카드뉴스 요약 - TTL 24h
 개인화 레이어 코멘트 - TTL 다음 정산 시각(15:30 KST)까지
@@ -8,15 +8,37 @@ Redis 캐싱
 import hashlib
 import json
 import logging
+import time
 from datetime import datetime
+from typing import Literal
 
 from pydantic import ValidationError
 
 from app.infra.redis_client import get_redis_client
+from app.infra.usage_tracker import record_cache_event
 from app.schemas.briefing import CommonBriefing
 from app.schemas.news import CardNewsResult
 
 _logger = logging.getLogger(__name__)
+
+
+async def _record_cache_event_safely(
+    agent_type: str,
+    task_type: str,
+    cache_status: Literal["hit", "miss", "error", "invalid"],
+    lookup_ms: float,
+) -> None:
+    """캐시 이벤트를 기록한다. 기록 실패가 캐시 조회 결과에 영향을 주지 않도록 예외는 로그만 남긴다."""
+    try:
+        await record_cache_event(
+            agent_type=agent_type,
+            task_type=task_type,
+            cache_status=cache_status,
+            lookup_ms=lookup_ms,
+        )
+    except Exception:
+        _logger.exception("캐시 이벤트 기록 실패 (캐시 조회 결과에는 영향 없음)")
+
 
 _TTL_SECONDS = 24 * 60 * 60
 
@@ -47,20 +69,29 @@ async def get_briefing(
     news_id: str, agent_type: str, level_range: str
 ) -> CommonBriefing | None:
     key = _briefing_key(news_id, agent_type, level_range)
+    started = time.perf_counter()
     try:
         client = get_redis_client()
         raw = await client.get(key)
+        lookup_ms = (time.perf_counter() - started) * 1000
         if raw is None:
+            await _record_cache_event_safely(agent_type, "briefing", "miss", lookup_ms)
             return None
-        return CommonBriefing.model_validate_json(raw)
+        result = CommonBriefing.model_validate_json(raw)
+        await _record_cache_event_safely(agent_type, "briefing", "hit", lookup_ms)
+        return result
     except ValidationError:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception(
             "공통 분석 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
         )
         await _delete_key(key)
+        await _record_cache_event_safely(agent_type, "briefing", "invalid", lookup_ms)
         return None
     except Exception:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception("공통 분석 캐시 조회 실패, 캐시 미스로 처리합니다.")
+        await _record_cache_event_safely(agent_type, "briefing", "error", lookup_ms)
         return None
 
 
@@ -78,12 +109,20 @@ async def set_briefing(
         _logger.exception("공통 분석 캐시 저장 실패, 캐시 없이 진행합니다.")
 
 
-async def get_personal(user_id: str, briefing_id: str) -> str | None:
+async def get_personal(user_id: str, briefing_id: str, agent_type: str) -> str | None:
+    started = time.perf_counter()
     try:
         client = get_redis_client()
-        return await client.get(_personal_key(user_id, briefing_id))
+        raw = await client.get(_personal_key(user_id, briefing_id))
+        lookup_ms = (time.perf_counter() - started) * 1000
+        await _record_cache_event_safely(
+            agent_type, "personal", "hit" if raw is not None else "miss", lookup_ms
+        )
+        return raw
     except Exception:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception("개인화 코멘트 캐시 조회 실패, 캐시 미스로 처리합니다.")
+        await _record_cache_event_safely(agent_type, "personal", "error", lookup_ms)
         return None
 
 
@@ -99,21 +138,39 @@ async def set_personal(
 
 async def get_summary(news_id: str, exclude_terms: list[str]) -> CardNewsResult | None:
     key = _summary_key(news_id, exclude_terms)
+    started = time.perf_counter()
     try:
         client = get_redis_client()
         raw = await client.get(key)
+        lookup_ms = (time.perf_counter() - started) * 1000
         if raw is None:
+            await _record_cache_event_safely(
+                "SUMMARY", "news_summary", "miss", lookup_ms
+            )
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_news_id(result, key, expected_news_id=news_id)
+        validated = await _validate_news_id(result, key, expected_news_id=news_id)
+        await _record_cache_event_safely(
+            "SUMMARY",
+            "news_summary",
+            "hit" if validated is not None else "miss",
+            lookup_ms,
+        )
+        return validated
     except ValidationError:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception(
             "카드뉴스 요약 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
         )
         await _delete_key(key)
+        await _record_cache_event_safely(
+            "SUMMARY", "news_summary", "invalid", lookup_ms
+        )
         return None
     except Exception:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception("카드뉴스 요약 캐시 조회 실패, 캐시 미스로 처리합니다.")
+        await _record_cache_event_safely("SUMMARY", "news_summary", "error", lookup_ms)
         return None
 
 
@@ -123,9 +180,7 @@ async def set_summary(
     try:
         client = get_redis_client()
         payload = value.model_dump_json()
-        await client.set(
-            _summary_key(news_id, exclude_terms), payload, ex=_TTL_SECONDS
-        )
+        await client.set(_summary_key(news_id, exclude_terms), payload, ex=_TTL_SECONDS)
         await client.set(_summary_latest_key(news_id), payload, ex=_TTL_SECONDS)
     except Exception:
         _logger.exception("카드뉴스 요약 캐시 저장 실패, 캐시 없이 진행합니다.")
@@ -137,21 +192,41 @@ async def get_latest_summary(news_id: str) -> CardNewsResult | None:
     브리핑 프롬프트 생성 시 클라이언트가 보낸 headline/points 대신 사용한다.
     """
     key = _summary_latest_key(news_id)
+    started = time.perf_counter()
     try:
         client = get_redis_client()
         raw = await client.get(key)
+        lookup_ms = (time.perf_counter() - started) * 1000
         if raw is None:
+            await _record_cache_event_safely(
+                "SUMMARY", "latest_news_summary", "miss", lookup_ms
+            )
             return None
         result = CardNewsResult.model_validate_json(raw)
-        return await _validate_news_id(result, key, expected_news_id=news_id)
+        validated = await _validate_news_id(result, key, expected_news_id=news_id)
+        await _record_cache_event_safely(
+            "SUMMARY",
+            "latest_news_summary",
+            "hit" if validated is not None else "miss",
+            lookup_ms,
+        )
+        return validated
     except ValidationError:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception(
             "카드뉴스 최신 캐시 값이 손상되어 삭제하고 캐시 미스로 처리합니다."
         )
         await _delete_key(key)
+        await _record_cache_event_safely(
+            "SUMMARY", "latest_news_summary", "invalid", lookup_ms
+        )
         return None
     except Exception:
+        lookup_ms = (time.perf_counter() - started) * 1000
         _logger.exception("카드뉴스 최신 캐시 조회 실패, 캐시 미스로 처리합니다.")
+        await _record_cache_event_safely(
+            "SUMMARY", "latest_news_summary", "error", lookup_ms
+        )
         return None
 
 

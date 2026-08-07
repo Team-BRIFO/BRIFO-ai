@@ -30,6 +30,20 @@ class CardNewsItem(BaseModel):
             raise ValueError("keywords와 terms의 길이가 일치해야 합니다.")
         if not self.keywords:
             raise ValueError("keywords는 비어 있을 수 없습니다.")
+
+        mismatched = [
+            (i, kw, t.surface)
+            for i, (kw, t) in enumerate(zip(self.keywords, self.terms))
+            if kw != t.surface
+        ]
+        if mismatched:
+            details = ", ".join(
+                f"index {i}: keywords={kw!r} terms.surface={surface!r}"
+                for i, kw, surface in mismatched
+            )
+            raise ValueError(
+                f"keywords[i]는 terms[i].surface와 일치해야 합니다 ({details})."
+            )
         return self
 
 

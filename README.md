@@ -60,7 +60,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 | 헬스 체크 | `GET /ai/health` | 서버 상태 확인 |
 
 - LLM은 **사원별 차등**으로 사용합니다: 루키 `Gemini 3.5 Flash` · 탱커 `GPT-5.3` · 프로 `Claude Sonnet 4.6`, 카드뉴스 요약·개인화는 `Gemini 3.5 Flash Lite`. 라우팅은 **OpenRouter** 를 통합니다(primary/fallback 정책).
-- 동일 입력(뉴스 × 사원타입 × 레벨대)은 Redis 캐싱으로 LLM 호출을 1회로 묶어 비용을 통제합니다.
+- 동일 입력(뉴스 × 사원타입 × 레벨대)은 Valkey 캐싱으로 LLM 호출을 1회로 묶어 비용을 통제합니다.
 
 ---
 
@@ -73,7 +73,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 | HTTP 클라이언트 | `httpx` (공유 AsyncClient) |
 | LLM 라우팅 | `OpenRouter` (primary/fallback 모델 정책) |
 | 설정 | `pydantic-settings` (환경 변수 관리) |
-| 캐시 | `Redis` |
+| 캐시 | `Valkey` |
 | 패키지 관리 | `uv` (`pyproject.toml`) |
 | 배포 | `Dockerfile` · `AWS EC2` · `GitHub Actions` |
 
@@ -83,7 +83,7 @@ BRIFO는 사용자가 투자 회사의 **사장(CEO)** 이 되어 개성 있는 
 
 ```
 app/
-├── main.py             # FastAPI 진입점 (lifespan: HTTP/Redis 클라이언트, 라우터·예외 핸들러 등록)
+├── main.py             # FastAPI 진입점 (lifespan: HTTP/Valkey 클라이언트, 라우터·예외 핸들러 등록)
 ├── api/                # HTTP 입구 (health · briefing · news · deps) — 로직 없음
 ├── schemas/            # 백엔드와 주고받는 Pydantic Request/Response 모델
 ├── core/
@@ -125,4 +125,4 @@ uv run uvicorn app.main:app --reload
 
 - 실행 후 API 문서(Swagger UI): `http://localhost:8000/docs`
 - 배포는 `Dockerfile`로 컨테이너 빌드 후 AWS EC2에 올립니다.
-- LLM API 키(OpenRouter), Redis 접속 정보 등 민감 정보는 커밋 금지 — `.env`로 관리합니다.
+- LLM API 키(OpenRouter), Valkey 접속 정보 등 민감 정보는 커밋 금지 — `.env`로 관리합니다.

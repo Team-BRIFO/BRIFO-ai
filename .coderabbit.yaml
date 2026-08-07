@@ -25,7 +25,7 @@ reviews:
     - path: "**/*"
       instructions: >
         이 프로젝트의 스택: Python 3.11+, FastAPI, Uvicorn, httpx(공유 AsyncClient),
-        Pydantic v2 + pydantic-settings, Redis, uv. LLM은 Claude(Haiku 4.5 /
+        Pydantic v2 + pydantic-settings, Valkey, uv. LLM은 Claude(Haiku 4.5 /
         Sonnet 4.6 / Opus 4.x)와 Gemini 3 Flash를 사원별로 차등 사용하며 OpenRouter로
         라우팅한다(primary/fallback 정책). LangChain은 사용하지 않고 OpenRouter를
         httpx로 직접 호출한다. 레이어는 api(HTTP 입구) → core/services(use-case) →
@@ -37,7 +37,7 @@ reviews:
       instructions: >
         - 타입 힌트를 붙였는지 확인해줘(함수 시그니처·반환형). Pydantic v2 모델로
           입출력을 검증하는지 봐줘.
-        - LLM API 키(OpenRouter), Redis 접속 정보 등 시크릿이 코드에 하드코딩되어
+        - LLM API 키(OpenRouter), Valkey 접속 정보 등 시크릿이 코드에 하드코딩되어
           있으면 반드시 지적하고 config/settings.py(pydantic-settings) 주입을 제안해줘.
         - 함수/변수는 snake_case, 클래스는 PascalCase, 상수는 UPPER_SNAKE_CASE를 따라야 한다.
         - async 엔드포인트/서비스 안에서 동기 blocking I/O를 그대로 호출하면 이벤트
@@ -55,7 +55,7 @@ reviews:
         service는 캐시 확인 → 프롬프트 조립 → LLM 호출 → 결과 파싱 흐름을 담당한다.
         브리핑 생성은 ROOKIE·TANKER·PRO를 asyncio.gather로 병렬 호출하는 패턴을 따른다.
         LLM 응답을 신뢰하고 그대로 반환하지 말고 정해진 JSON 스키마로 파싱·검증하는지,
-        동일 입력(뉴스×사원타입×레벨대)에 대한 Redis 캐싱을 우회하지 않는지 확인해줘.
+        동일 입력(뉴스×사원타입×레벨대)에 대한 Valkey 캐싱을 우회하지 않는지 확인해줘.
 
     - path: "app/core/agents/**/*.py"
       instructions: >
@@ -67,7 +67,7 @@ reviews:
 
     - path: "app/infra/**/*.py"
       instructions: >
-        infra는 외부 I/O(OpenRouter, Redis, HTTP) 전용이다. 여기에 도메인/비즈니스 로직이
+        infra는 외부 I/O(OpenRouter, Valkey, HTTP) 전용이다. 여기에 도메인/비즈니스 로직이
         섞이지 않는지 확인해줘. openrouter_client는 타임아웃·재시도·fallback,
         usage_tracker는 사용량/성능 기록을 다룬다. 실패 경로(LLMTimeout·RateLimitError·
         AllModelsFailed 등 exceptions.py의 예외)를 적절히 던지고 처리하는지 봐줘.

@@ -11,7 +11,9 @@ from pydantic import ValidationError
 from app.schemas.news import CardNewsItem, CardNewsResult, Term
 
 
-def _make_item(points_count: int = 3, keywords_count: int = 2, terms_count: int = 2) -> dict:
+def _make_item(
+    points_count: int = 3, keywords_count: int = 2, terms_count: int = 2
+) -> dict:
     return {
         "headline": "헤드라인",
         "points": [f"포인트{i}" for i in range(points_count)],
@@ -25,7 +27,9 @@ def _make_item(points_count: int = 3, keywords_count: int = 2, terms_count: int 
 
 class CardNewsItemTests(unittest.TestCase):
     def test_valid_item_with_3_points_and_matching_keywords_terms(self):
-        item = CardNewsItem(**_make_item(points_count=3, keywords_count=2, terms_count=2))
+        item = CardNewsItem(
+            **_make_item(points_count=3, keywords_count=2, terms_count=2)
+        )
         self.assertEqual(len(item.points), 3)
         self.assertEqual(len(item.keywords), len(item.terms))
 
@@ -42,6 +46,13 @@ class CardNewsItemTests(unittest.TestCase):
     def test_empty_keywords_is_rejected(self):
         with self.assertRaises(ValidationError):
             CardNewsItem(**_make_item(keywords_count=0, terms_count=0))
+
+    def test_keyword_not_matching_term_surface_at_same_index_is_rejected(self):
+        item = _make_item(keywords_count=1, terms_count=1)
+        item["keywords"] = ["영업이익"]
+        item["terms"] = [{"surface": "매출", "term": "매출액", "definition": "설명"}]
+        with self.assertRaises(ValidationError):
+            CardNewsItem(**item)
 
 
 class CardNewsResultTests(unittest.TestCase):
