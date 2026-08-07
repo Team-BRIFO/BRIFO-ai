@@ -57,7 +57,7 @@ BRIFO AI 서비스(FastAPI)의 디렉토리 구조 및 각 모듈의 역할을 �
 
 ### `main.py`
 FastAPI 앱 진입점.
-- lifespan에서 공유 HTTP 클라이언트와 Redis 클라이언트를 생성하고 종료
+- lifespan에서 공유 HTTP 클라이언트와 Valkey 클라이언트를 생성하고 종료
 - 라우터 등록 및 전역 예외 핸들러 등록
 
 ---
@@ -102,21 +102,21 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 
 | 파일 | 설명 |
 |------|------|
-| `briefing_service.py` | Redis 캐시 확인 후 ROOKIE·TANKER·PRO를 `asyncio.gather`로 동시 호출하여 브리핑 취합 |
+| `briefing_service.py` | Valkey 캐시 확인 후 ROOKIE·TANKER·PRO를 `asyncio.gather`로 동시 호출하여 브리핑 취합 |
 | `summary_service.py` | 카드뉴스 요약 로직 |
 
 ---
 
 ### `infra/` — 외부 I/O 전용 모듈
 
-외부 시스템(OpenRouter, Redis, HTTP)과의 통신을 전담합니다.
+외부 시스템(OpenRouter, Valkey, HTTP)과의 통신을 전담합니다.
 
 | 파일 | 설명 |
 |------|------|
 | `http_client.py` | OpenRouter 전용 공유 `httpx.AsyncClient` 관리 (lifespan에서 생성·종료) |
 | `redis_client.py` | 공유 `redis.asyncio.Redis` 클라이언트 관리 (lifespan에서 생성·종료) |
 | `openrouter_client.py` | `http_client`의 공유 클라이언트로 OpenRouter LLM 호출, primary 실패 시 fallback 1회 재시도 |
-| `cache.py` | `redis_client`를 이용한 Redis 캐싱 담당 (공통 분석 24h, 카드뉴스 요약 24h, 개인화 코멘트는 다음 정산 시각까지) |
+| `cache.py` | `redis_client`를 이용한 Valkey 캐싱 담당 (공통 분석 24h, 카드뉴스 요약 24h, 개인화 코멘트는 다음 정산 시각까지) |
 | `usage_tracker.py` | LLM 사용량·비용·지연시간 등을 `logs/llm_usage.jsonl`에 기록 |
 
 ---

@@ -1,18 +1,18 @@
 """
-카드뉴스 요약 캐싱 -> 브리핑 프롬프트 연동을 실제 Redis + 실제 OpenRouter LLM 호출로 검증하는
+카드뉴스 요약 캐싱 -> 브리핑 프롬프트 연동을 실제 Valkey + 실제 OpenRouter LLM 호출로 검증하는
 수동 통합 테스트. `test_*.py`가 아니라서 `unittest discover`에는 잡히지 않는다 (자동 실행 시
 실제 LLM 과금이 발생하는 걸 막기 위함).
 
 사전 준비:
-1. 로컬 Redis 실행 (.env의 REDIS_URL과 포트를 맞출 것):
-   docker run --rm -d -p 6379:6379 redis:7-alpine
+1. 로컬 Valkey 실행 (.env의 REDIS_URL과 포트를 맞출 것):
+   docker run --rm -d -p 6379:6379 valkey/valkey:8-alpine
 2. .env에 OPENROUTER_API_KEY / AI_INTERNAL_API_KEY가 유효하게 설정되어 있어야 한다.
 
 실행:
     uv run python -m tests.manual_briefing_cache_flow
 
 테스트 시나리오:
-1. POST /ai/news/summarize 호출 -> 카드뉴스 생성 (Redis에 캐싱됨)
+1. POST /ai/news/summarize 호출 -> 카드뉴스 생성 (Valkey에 캐싱됨)
 2. POST /ai/briefing/generate 호출 -> 브리핑 생성
 3. 1에서 생성된 카드뉴스(headline/points)가 2번 브리핑 생성에 실제로 반영됐는지 확인
    (요청 body에는 일부러 다른 headline/points를 보내서, 캐시가 그걸 덮어쓰는지 확인한다)

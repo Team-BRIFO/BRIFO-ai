@@ -36,7 +36,7 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
  
 ## 1. 카드뉴스 요약 생성
  
-뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 1건을 생성합니다. `(newsId, excludeTerms)` 기준 24h Redis 캐시 적용.
+뉴스 원문을 받아 카드뉴스(헤드라인 + 포인트 + 키워드 + 용어 설명) 1건을 생성합니다. `(newsId, excludeTerms)` 기준 24h Valkey 캐시 적용.
  
 **`POST /ai/news/summarize`**
  
