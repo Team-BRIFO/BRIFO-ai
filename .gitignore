@@ -307,3 +307,6 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,pycharm
+
+# eval/results는 실제 LLM 호출 결과라 커밋하지 않는다
+eval/results/

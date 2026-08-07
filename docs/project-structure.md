@@ -11,6 +11,7 @@ BRIFO AI 서비스(FastAPI)의 디렉토리 구조 및 각 모듈의 역할을 �
 ├── .github/
 ├── docs/
 ├── tests/
+├── eval/
 ├── logs/
 │   └── llm_usage.jsonl
 ├── app/
@@ -132,5 +133,6 @@ HTTP 요청을 받아 `core/services`로 위임하는 레이어. 비즈니스 �
 | `Dockerfile` | 배포용 컨테이너 빌드 설정 (uv 기반 멀티스테이지 빌드, `PORT` 환경변수로 리스닝 포트 지정, 기본값 8000)                                         |
 | `logs/` | `usage_tracker.py`가 기록하는 LLM 사용량 로그(`llm_usage.jsonl`) 저장 위치                                                           |
 | `tests/` | 테스트 코드 모음                                                           |
+| `eval/` | 실제 LLM을 호출해 프롬프트 결과물의 품질을 확인하는 스크립트 모음. `tests/`와 달리 결과가 매번 달라지고 비용이 들어 자동 실행 없이 프롬프트 수정 시 수동으로만 돌림 |
 | `docs/` | 프로젝트 문서 모음                                                           |
 | `.github/` | GitHub PR, ISSUE 템플릿                                                 |

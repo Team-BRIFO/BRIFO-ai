@@ -81,7 +81,8 @@ FastAPI AI 서비스는 외부에 노출되지 않는 내부 서비스입니다.
 }
 ```
  
-- `points.length`는 정확히 3, `keywords.length`는 `terms.length`와 같아야 하며 `keywords`는 빈 배열 불가 (`CardNewsItem` validator에서 검증)
+- `points.length`는 정확히 3
+- `keywords.length`는 `terms.length`와 같아야 하며, 1~3개 범위(빈 배열 불가, 최대 3개 — `CardNewsItem` validator에서 검증). 제외 용어를 뺀 후보가 부족하면 1개만 반환될 수 있음
 - `cardNews` 배열은 정확히 1개 원소만 허용 (`CardNewsResult`의 `min_length`/`max_length` 제약)
 - 위 제약을 위반하면 `ValidationError` → `InvalidLLMResponse`(`BRIEFING502`)로 매핑
 ---

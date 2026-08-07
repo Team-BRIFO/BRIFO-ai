@@ -19,8 +19,8 @@ class Term(BaseModel):
 class CardNewsItem(BaseModel):
     headline: str
     points: list[str]
-    keywords: list[str]
-    terms: list[Term]
+    keywords: list[str] = Field(max_length=3)
+    terms: list[Term] = Field(max_length=3)
 
     @model_validator(mode="after")
     def _check_lengths(self):
