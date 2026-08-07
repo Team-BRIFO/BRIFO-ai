@@ -137,7 +137,7 @@ async def _build_agent_briefing(
         confidenceRate=common.confidence_rate,
     )
 
-    personal_comment = await get_personal(user_id, briefing_id)
+    personal_comment = await get_personal(user_id, briefing_id, agent_type)
     personal_cached = personal_comment is not None
     if personal_comment is None:
         personal_comment = await _generate_and_cache_personal(
