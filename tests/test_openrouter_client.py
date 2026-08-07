@@ -17,6 +17,7 @@ from app.infra.openrouter_client import (
     _try_model_with_json_retry,
     call_llm,
 )
+from app.infra.pricing import calculate_estimated_cost_usd
 
 
 def _choice(*, finish_reason: str = "stop", content: str = '{"ok": true}') -> dict:
@@ -80,12 +81,13 @@ class CallLlmFallbackOnLengthTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=_choice(finish_reason="stop"))
 
         client = _client_with_handler(handler)
+        record_usage_mock = AsyncMock()
 
         with (
             patch.object(
                 openrouter_client, "get_openrouter_client", return_value=client
             ),
-            patch.object(openrouter_client, "record_usage", new=AsyncMock()),
+            patch.object(openrouter_client, "record_usage", record_usage_mock),
         ):
             result = await call_llm(
                 "prompt",
@@ -99,11 +101,19 @@ class CallLlmFallbackOnLengthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["fallback_used"])
         self.assertEqual(result["content"], '{"ok": true}')
 
+        # 회귀 테스트: finish_reason=length로 잘린 primary 호출에서도 실제 소모된
+        # 토큰(prompt=10, completion=5)이 유실되지 않고 fallback 토큰과 함께 누적돼야 함
+        self.assertEqual(result["input_tokens"], 20)
+        self.assertEqual(result["output_tokens"], 10)
+        record_usage_mock.assert_awaited_once()
+        _, record_kwargs = record_usage_mock.call_args
+        self.assertEqual(record_kwargs["input_tokens"], 20)
+        self.assertEqual(record_kwargs["output_tokens"], 10)
+        self.assertEqual(record_kwargs["finish_reason"], "stop")
+
 
 class TryModelWithJsonRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_retries_once_when_response_is_not_json(self):
-        # 요청 payload 전체(재질문 문구·response_format 포함)를 검증해야 해서
-        # 모델명만 담는 다른 테스트의 calls와 달리 payloads로 구분해 둔다
         payloads = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -172,6 +182,52 @@ class TryModelWithJsonRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.prompt_tokens, 20)
         self.assertEqual(ctx.exception.completion_tokens, 10)
 
+    async def test_raises_value_error_when_retry_call_itself_raises(self):
+        request_count = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal request_count
+            request_count += 1
+            if request_count == 1:
+                return httpx.Response(
+                    200, json=_choice(content="이것은 JSON이 아닙니다.")
+                )
+            return httpx.Response(200, json=_choice(finish_reason="length"))
+
+        client = _client_with_handler(handler)
+        with self.assertRaises(ValueError) as ctx:
+            await _try_model_with_json_retry(
+                client, "some-model", "prompt", require_json=True
+            )
+
+        self.assertEqual(request_count, 2)
+        # 회귀 테스트: 재질문 호출 자체가 예외를 던져도 첫 호출(10/5)의 토큰이
+        # 유실되지 않고 재질문에서 소모된 토큰(10/5)과 합쳐져야 함
+        self.assertEqual(ctx.exception.prompt_tokens, 20)
+        self.assertEqual(ctx.exception.completion_tokens, 10)
+
+    async def test_preserves_first_usage_when_json_retry_has_http_error(self):
+        request_count = 0
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            nonlocal request_count
+            request_count += 1
+            if request_count == 1:
+                return httpx.Response(
+                    200, json=_choice(content="이것은 JSON이 아닙니다.")
+                )
+            return httpx.Response(500, json={"error": "internal server error"})
+
+        client = _client_with_handler(handler)
+        with self.assertRaises(ValueError) as ctx:
+            await _try_model_with_json_retry(
+                client, "some-model", "prompt", require_json=True
+            )
+
+        self.assertEqual(request_count, 2)
+        self.assertEqual(ctx.exception.prompt_tokens, 10)
+        self.assertEqual(ctx.exception.completion_tokens, 5)
+
     async def test_does_not_retry_when_require_json_is_false(self):
         request_count = 0
 
@@ -237,7 +293,6 @@ class CallLlmFallbackOnInvalidJsonTests(unittest.IsolatedAsyncioTestCase):
                 task_type="briefing",
             )
 
-        # primary: 최초 시도 + JSON 재질문 1회, 이후 fallback 모델로 전환
         self.assertEqual(calls, ["primary-model", "primary-model", "fallback-model"])
         self.assertTrue(result["fallback_used"])
         self.assertEqual(result["content"], '{"ok": true}')
@@ -282,6 +337,86 @@ class CallLlmFallbackOnBothFailingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record_kwargs["input_tokens"], 40)
         self.assertEqual(record_kwargs["output_tokens"], 20)
         self.assertEqual(record_kwargs["status"], "error")
+
+
+class MixedModelCostCalculationTests(unittest.IsolatedAsyncioTestCase):
+    """
+    primary와 fallback의 단가가 다를 때, 각 모델에서 실제로 소모된 토큰에
+    그 모델의 단가를 각각 적용해 합산하는지 검증한다.
+    """
+
+    _PRIMARY_MODEL = "anthropic/claude-opus-4.8"
+    _FALLBACK_MODEL = "google/gemini-3.1-pro-preview"
+
+    def _expected_combined_cost(self) -> float:
+        primary_cost = calculate_estimated_cost_usd(self._PRIMARY_MODEL, 10, 5)
+        fallback_cost = calculate_estimated_cost_usd(self._FALLBACK_MODEL, 10, 5)
+        return primary_cost + fallback_cost
+
+    async def test_success_after_fallback_prices_each_model_separately(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            model = payload["model"]
+            if model == self._PRIMARY_MODEL:
+                body = _choice(finish_reason="length")
+            else:
+                body = _choice(finish_reason="stop")
+            body["model"] = model
+            return httpx.Response(200, json=body)
+
+        client = _client_with_handler(handler)
+        record_usage_mock = AsyncMock()
+
+        with (
+            patch.object(
+                openrouter_client, "get_openrouter_client", return_value=client
+            ),
+            patch.object(openrouter_client, "record_usage", record_usage_mock),
+        ):
+            await call_llm(
+                "prompt",
+                self._PRIMARY_MODEL,
+                self._FALLBACK_MODEL,
+                agent_type="TANKER",
+                task_type="briefing",
+            )
+
+        record_usage_mock.assert_awaited_once()
+        _, record_kwargs = record_usage_mock.call_args
+        expected_cost = self._expected_combined_cost()
+        # 전체 토큰(20/10)에 fallback 단가만 적용한 값과는 달라야 한다
+        wrong_cost = calculate_estimated_cost_usd(self._FALLBACK_MODEL, 20, 10)
+        self.assertNotAlmostEqual(record_kwargs["estimated_cost_usd"], wrong_cost)
+        self.assertAlmostEqual(record_kwargs["estimated_cost_usd"], expected_cost)
+
+    async def test_both_models_fail_prices_each_model_separately(self):
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_choice(finish_reason="length"))
+
+        client = _client_with_handler(handler)
+        record_usage_mock = AsyncMock()
+
+        with (
+            patch.object(
+                openrouter_client, "get_openrouter_client", return_value=client
+            ),
+            patch.object(openrouter_client, "record_usage", record_usage_mock),
+        ):
+            with self.assertRaises(openrouter_client.AllModelsFailed):
+                await call_llm(
+                    "prompt",
+                    self._PRIMARY_MODEL,
+                    self._FALLBACK_MODEL,
+                    agent_type="TANKER",
+                    task_type="briefing",
+                )
+
+        record_usage_mock.assert_awaited_once()
+        _, record_kwargs = record_usage_mock.call_args
+        expected_cost = self._expected_combined_cost()
+        wrong_cost = calculate_estimated_cost_usd(self._FALLBACK_MODEL, 20, 10)
+        self.assertNotAlmostEqual(record_kwargs["estimated_cost_usd"], wrong_cost)
+        self.assertAlmostEqual(record_kwargs["estimated_cost_usd"], expected_cost)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ async def generate_briefing(
     news_cards: list[NewsInput],
     agent_type: AgentType,
     level_range: str,
+    *,
+    task_type: str = "briefing",
 ) -> CommonBriefing:
     """
     사원 1명의 공통 분석 브리핑을 생성한다.
@@ -43,13 +45,13 @@ async def generate_briefing(
         primary_model,
         fallback_model,
         agent_type=agent_type,
-        task_type="briefing",
+        task_type=task_type,
     )
 
     try:
         parsed = json.loads(strip_markdown_fence(llm_response["content"]))
     except json.JSONDecodeError as exc:
-        await _record_parse_failure(llm_response, agent_type)
+        await _record_parse_failure(llm_response, agent_type, task_type)
         raise InvalidLLMResponse("AI 응답을 JSON으로 해석할 수 없습니다.") from exc
 
     try:
@@ -65,11 +67,13 @@ async def generate_briefing(
             cached=False,
         )
     except (KeyError, TypeError, ValidationError) as exc:
-        await _record_parse_failure(llm_response, agent_type)
+        await _record_parse_failure(llm_response, agent_type, task_type)
         raise InvalidLLMResponse("AI 응답이 정해진 형식과 다릅니다.") from exc
 
 
-async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> None:
+async def _record_parse_failure(
+    llm_response: dict, agent_type: AgentType, task_type: str = "briefing"
+) -> None:
     """
     호출은 성공했으나 파싱/검증에 실패했을 때
     실패 이벤트만 별도로 남긴다
@@ -83,9 +87,10 @@ async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> No
     )
     try:
         await record_usage(
+            event_type="llm_validation_error",
             model_name=llm_response.get("model", "unknown"),
             agent_type=agent_type,
-            task_type="briefing",
+            task_type=task_type,
             input_tokens=0,
             output_tokens=0,
             latency_ms=0.0,
@@ -94,7 +99,9 @@ async def _record_parse_failure(llm_response: dict, agent_type: AgentType) -> No
             error_type="parse_error",
         )
     except Exception:
-        _logger.exception("파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)")
+        _logger.exception(
+            "파싱 실패 usage 기록 실패 (InvalidLLMResponse 발생에는 영향 X)"
+        )
 
 
 async def generate_personal_comment(
