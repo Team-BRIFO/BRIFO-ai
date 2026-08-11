@@ -71,9 +71,9 @@ async def validation_exception_handler(
             fallback = MissingRequiredField(
                 f"필수 필드가 누락되었습니다: {', '.join(fields)}"
             )
-        elif error_type.endswith("_type"):
+        elif error_type.endswith("_type") or error_type.endswith("_parsing"):
             field = _field_path(errors[0]["loc"])
-            expected = error_type.removesuffix("_type")
+            expected = error_type.removesuffix("_type").removesuffix("_parsing")
             fallback = InvalidFieldType(
                 f"'{field}' 필드의 타입이 올바르지 않습니다. ({expected} 타입이어야 합니다.)"
             )

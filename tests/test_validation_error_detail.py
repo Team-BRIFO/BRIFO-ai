@@ -2,7 +2,7 @@
 RequestValidationError 세분화 테스트 (이슈 #36).
 - JSON 파싱 실패 -> COMMON400_INVALID_JSON
 - 필수 필드 누락 -> COMMON400_MISSING_FIELD (누락된 필드명 포함)
-- 타입 불일치 -> COMMON400_INVALID_TYPE (필드명 포함)
+- 타입 불일치 -> COMMON400_INVALID_TYPE (필드명 포함, *_type/*_parsing 모두 포함)
 - 그 외(예: 허용되지 않은 값) -> 기존과 동일하게 COMMON400 유지
 """
 
@@ -76,6 +76,28 @@ class InvalidFieldTypeTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["code"], "COMMON400_INVALID_TYPE")
         self.assertIn("excludeTerms", body["message"])
+
+    def test_unparseable_value_returns_invalid_type_code_with_field_name(self):
+        """숫자로 변환 불가능한 문자열(int_parsing)도 타입 오류로 분류돼야 한다."""
+        request_body = _make_briefing_request()
+        request_body["recentDecisions"] = [
+            {
+                "stockName": "삼성전자",
+                "direction": "UP",
+                "confidence": "abc",
+                "isCorrect": True,
+                "actualChange": 1.0,
+            }
+        ]
+        response = client.post(
+            "/ai/briefing/generate",
+            json=request_body,
+            headers=HEADERS,
+        )
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertEqual(body["code"], "COMMON400_INVALID_TYPE")
+        self.assertIn("confidence", body["message"])
 
 
 class UnsupportedValueFallsBackToCommon400Tests(unittest.TestCase):
