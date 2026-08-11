@@ -33,6 +33,10 @@ client = TestClient(app)
 HEADERS = {"AI_INTERNAL_API_KEY": TEST_INTERNAL_API_KEY}
 
 
+def tearDownModule():
+    app.dependency_overrides.pop(get_settings, None)
+
+
 class InvalidJsonBodyTests(unittest.TestCase):
     def test_broken_json_body_returns_invalid_json_code(self):
         response = client.post(
