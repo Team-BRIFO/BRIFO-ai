@@ -31,6 +31,24 @@ class InvalidRequest(BrifoAIException):
     status_code = 400
 
 
+class InvalidJsonBody(BrifoAIException):
+    code = "COMMON400_INVALID_JSON"
+    message = "요청 본문이 올바른 JSON 형식이 아닙니다."
+    status_code = 400
+
+
+class MissingRequiredField(BrifoAIException):
+    code = "COMMON400_MISSING_FIELD"
+    message = "필수 필드가 누락되었습니다."
+    status_code = 400
+
+
+class InvalidFieldType(BrifoAIException):
+    code = "COMMON400_INVALID_TYPE"
+    message = "필드 타입이 올바르지 않습니다."
+    status_code = 400
+
+
 class InvalidAgentType(BrifoAIException):
     code = "AGENT400"
     message = "유효하지 않은 사원 유형입니다."
@@ -44,24 +62,24 @@ class NewsNotFound(BrifoAIException):
 
 
 class LLMTimeout(BrifoAIException):
-    code = "BRIEFING502"
+    code = "BRIEFING502_TIMEOUT"
     message = "AI 분석 생성에 실패했습니다. (timeout)"
     status_code = 502
 
 
 class RateLimit(BrifoAIException):
-    code = "BRIEFING502"
+    code = "BRIEFING502_RATE_LIMIT"
     message = "AI 분석 생성에 실패했습니다. (rate limit)"
     status_code = 502
 
 
 class AllModelsFailed(BrifoAIException):
-    code = "BRIEFING502"
-    message = "AI 분석 생성에 실패했습니다."
+    code = "BRIEFING502_ALL_FAILED"
+    message = "AI 분석 생성에 실패했습니다. (all models failed)"
     status_code = 502
 
 
 class InvalidLLMResponse(BrifoAIException):
-    code = "BRIEFING502"
-    message = "AI 분석 생성에 실패했습니다."
+    code = "BRIEFING502_INVALID_RESPONSE"
+    message = "AI 분석 생성에 실패했습니다. (invalid response)"
     status_code = 502
